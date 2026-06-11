@@ -69,11 +69,17 @@ const Store = {
   // ---------------- Backup / restore ----------------
   // Config is intentionally tiny (addon manifest URLs + settings) so it can be
   // copied as text, put in a QR code, or stuck on the end of a URL. No account needed.
+  //
+  // The SIMKL access token is deliberately excluded — it's a credential for
+  // your SIMKL account, and shouldn't end up in a copy/pasted blob or share
+  // link. Each device should connect to SIMKL itself via the PIN flow.
   exportConfig() {
+    const settings = { ...this.getSettings() };
+    delete settings.simklAccessToken;
     return {
       v: 1,
       addonUrls: this.getAddons().map((a) => a.manifestUrl),
-      settings: this.getSettings(),
+      settings,
     };
   },
 
@@ -98,7 +104,11 @@ const Store = {
 
   applySettingsFromConfig(config) {
     if (config && config.settings) {
-      this.saveSettings({ ...DEFAULT_SETTINGS, ...config.settings });
+      // Preserve this device's own SIMKL connection — imported configs never
+      // carry an access token (see exportConfig), so don't let merging wipe
+      // out an existing one.
+      const current = this.getSettings();
+      this.saveSettings({ ...DEFAULT_SETTINGS, ...config.settings, simklAccessToken: current.simklAccessToken });
     }
   },
 };
