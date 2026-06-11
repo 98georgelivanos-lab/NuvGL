@@ -99,6 +99,7 @@ const App = {
 
   hideSheet() {
     this.el('sheet-backdrop').classList.remove('show');
+    this._simklPollToken = null;
   },
 
   // ---------------- Home / Catalog ----------------
@@ -116,12 +117,27 @@ const App = {
       }
     }
 
-    if (!sections.length) {
+    const showContinue = Simkl.isConnected();
+
+    if (!sections.length && !showContinue) {
       container.innerHTML = `<div class="empty">No catalogs available. Add an addon in the Addons tab.</div>`;
       return;
     }
 
-    container.innerHTML = sections
+    const continueHtml = showContinue
+      ? `
+        <section class="catalog-section" id="cat-continue">
+          <div class="section-head">
+            <h2>Continue Watching</h2>
+            <span class="source">SIMKL</span>
+          </div>
+          <div class="catalog-row" id="cat-row-continue">
+            <div class="status"><div class="spinner"></div>Loading…</div>
+          </div>
+        </section>`
+      : '';
+
+    container.innerHTML = continueHtml + sections
       .map((s, i) => `
         <section class="catalog-section" id="cat-${i}">
           <div class="section-head">
@@ -135,7 +151,28 @@ const App = {
       `)
       .join('');
 
+    if (showContinue) this.loadContinueWatching();
     sections.forEach((s, i) => this.loadCatalogRow(s, i));
+  },
+
+  async loadContinueWatching() {
+    const section = this.el('cat-continue');
+    if (!section) return;
+    const row = this.el('cat-row-continue');
+    try {
+      const items = await Simkl.getContinueWatching();
+      if (!items.length) {
+        section.remove();
+        return;
+      }
+      row.innerHTML = items.map((m) => posterCardHtml(m)).join('');
+      row.querySelectorAll('.poster-card').forEach((card, idx) => {
+        card.addEventListener('click', () => this.openDetail(items[idx]));
+      });
+    } catch (e) {
+      console.warn('continue watching load failed', e);
+      section.remove();
+    }
   },
 
   async loadCatalogRow(section, index) {
@@ -210,7 +247,10 @@ const App = {
     } else {
       const btn = this.el('detail-find-streams');
       if (btn) {
-        btn.addEventListener('click', () => this.openStreams('movie', meta.id, meta.name));
+        const trackInfo = /^tt\d+/.test(meta.id || '')
+          ? { kind: 'movie', imdbId: meta.id, title: meta.name, year: parseYear(meta.releaseInfo) }
+          : null;
+        btn.addEventListener('click', () => this.openStreams('movie', meta.id, meta.name, trackInfo));
       }
     }
   },
@@ -231,11 +271,15 @@ const App = {
           </div>`
         )
         .join('');
-      this.el('episode-list').querySelectorAll('.episode-row').forEach((row) => {
+      this.el('episode-list').querySelectorAll('.episode-row').forEach((row, idx) => {
         row.addEventListener('click', () => {
           this.el('episode-list').querySelectorAll('.episode-row').forEach((r) => r.classList.remove('active'));
           row.classList.add('active');
-          this.openStreams('series', row.dataset.id, row.dataset.title);
+          const v = eps[idx];
+          const trackInfo = /^tt\d+/.test(meta.id || '')
+            ? { kind: 'episode', showImdbId: meta.id, title: meta.name, year: parseYear(meta.releaseInfo), season: v.season, episode: v.episode }
+            : null;
+          this.openStreams('series', row.dataset.id, row.dataset.title, trackInfo);
         });
       });
     };
@@ -247,7 +291,7 @@ const App = {
   },
 
   // ---------------- Streams ----------------
-  async openStreams(type, id, title) {
+  async openStreams(type, id, title, trackInfo) {
     this.showSheet(`<h3>${escapeHtml(title)}</h3><div class="status"><div class="spinner"></div>Finding streams…</div>`);
     try {
       const streams = await Stremio.getStreams(type, id);
@@ -270,10 +314,31 @@ const App = {
           }
           this.hideSheet();
           Player.launch(s.url, title);
+          this.trackWatched(trackInfo);
         });
       });
     } catch (e) {
       this.showSheet(`<h3>${escapeHtml(title)}</h3><div class="empty">Failed to load streams: ${escapeHtml(e.message)}</div>`);
+    }
+  },
+
+  // ---------------- SIMKL tracking ----------------
+  trackWatched(trackInfo) {
+    if (!trackInfo || !Simkl.isConnected()) return;
+    try {
+      let ok;
+      if (trackInfo.kind === 'movie') {
+        ok = Simkl.markMovieWatched(trackInfo.imdbId, trackInfo.title, trackInfo.year);
+      } else if (trackInfo.kind === 'episode') {
+        ok = Simkl.markEpisodeWatched(trackInfo.showImdbId, trackInfo.title, trackInfo.year, trackInfo.season, trackInfo.episode);
+      }
+      if (ok && typeof ok.then === 'function') {
+        ok.then((success) => {
+          if (success) this.toast('Marked as watched on SIMKL');
+        });
+      }
+    } catch (e) {
+      console.warn('SIMKL tracking failed', e);
     }
   },
 
@@ -374,6 +439,82 @@ const App = {
         this.toast('Invalid config JSON');
       }
     });
+
+    this.el('simkl-connect-btn').addEventListener('click', () => this.connectSimkl());
+    this.el('simkl-disconnect-btn').addEventListener('click', () => this.disconnectSimkl());
+  },
+
+  // ---------------- SIMKL connect ----------------
+  async connectSimkl() {
+    const clientId = this.el('simkl-client-id-input').value.trim();
+    if (!clientId) {
+      this.toast('Enter your SIMKL Client ID first');
+      return;
+    }
+    const settings = Store.getSettings();
+    settings.simklClientId = clientId;
+    Store.saveSettings(settings);
+
+    try {
+      const pin = await Simkl.requestPin(clientId);
+      const verifyUrl = pin.verification_url || pin.verification_uri || 'https://simkl.com/pin';
+      this.showSheet(`
+        <h3>Connect SIMKL</h3>
+        <p class="steps">
+          On any device, go to <a href="${escapeAttr(verifyUrl)}" target="_blank" rel="noopener">${escapeHtml(verifyUrl)}</a>
+          and enter this code:
+        </p>
+        <div class="simkl-pin-code">${escapeHtml(pin.user_code)}</div>
+        <div class="status" id="simkl-pin-status"><div class="spinner"></div>Waiting for authorization…</div>
+      `);
+      this.pollSimklPin(clientId, pin);
+    } catch (e) {
+      this.toast('Could not start SIMKL connection — check your Client ID');
+    }
+  },
+
+  pollSimklPin(clientId, pin) {
+    const token = {};
+    this._simklPollToken = token;
+    const interval = (pin.interval || 5) * 1000;
+    const deadline = Date.now() + (pin.expires_in || 900) * 1000;
+
+    const tick = async () => {
+      if (this._simklPollToken !== token) return; // cancelled (sheet closed)
+      if (Date.now() > deadline) {
+        this.hideSheet();
+        this.toast('SIMKL connection timed out — try again');
+        return;
+      }
+      try {
+        const res = await Simkl.pollPin(clientId, pin.user_code);
+        if (this._simklPollToken !== token) return;
+        if (res.result === 'OK' && res.access_token) {
+          const settings = Store.getSettings();
+          settings.simklAccessToken = res.access_token;
+          Store.saveSettings(settings);
+          this._simklPollToken = null;
+          this.hideSheet();
+          this.toast('Connected to SIMKL');
+          this.renderSettingsScreen();
+          this.renderHome();
+          return;
+        }
+      } catch (e) {
+        // transient — keep polling
+      }
+      if (this._simklPollToken === token) setTimeout(tick, interval);
+    };
+    setTimeout(tick, interval);
+  },
+
+  disconnectSimkl() {
+    const settings = Store.getSettings();
+    settings.simklAccessToken = '';
+    Store.saveSettings(settings);
+    this.toast('Disconnected from SIMKL');
+    this.renderSettingsScreen();
+    this.renderHome();
   },
 
   copyToClipboard(text, successMessage) {
@@ -409,6 +550,11 @@ const App = {
     this.el('custom-template-input').value = settings.customTemplate;
     this.el('cors-proxy-input').value = settings.corsProxy;
     this.el('custom-template-wrap').style.display = settings.player === 'custom' ? 'block' : 'none';
+    this.el('simkl-client-id-input').value = settings.simklClientId;
+
+    const connected = Simkl.isConnected();
+    this.el('simkl-connected').style.display = connected ? 'block' : 'none';
+    this.el('simkl-disconnected').style.display = connected ? 'none' : 'block';
   },
 };
 
@@ -426,6 +572,11 @@ function escapeHtml(str) {
 
 function escapeAttr(str) {
   return escapeHtml(str);
+}
+
+function parseYear(releaseInfo) {
+  const m = String(releaseInfo || '').match(/\d{4}/);
+  return m ? Number(m[0]) : undefined;
 }
 
 function posterCardHtml(m) {

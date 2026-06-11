@@ -76,6 +76,32 @@
       <p class="steps">If an addon's catalog or stream requests fail in Safari due to CORS, set a proxy prefix here — it will be prepended to addon request URLs.</p>
     </div>
     <div class="card">
+      <h2>SIMKL Tracking</h2>
+      <p class="steps">
+        Connect a free <a href="https://simkl.com" target="_blank" rel="noopener">SIMKL</a> account to track what
+        you watch and get a Continue Watching row. Tapping a stream marks that movie/episode as watched on SIMKL —
+        a future Android TV app signed into the same SIMKL account will see the same history automatically.
+      </p>
+      <div id="simkl-disconnected">
+        <label class="field">SIMKL Client ID</label>
+        <input type="text" id="simkl-client-id-input" placeholder="Paste your SIMKL app Client ID" autocomplete="off" autocorrect="off" spellcheck="false">
+        <p class="steps">
+          Don't have one? Create a free app at
+          <a href="https://simkl.com/settings/developer/new/" target="_blank" rel="noopener">simkl.com/settings/developer</a>
+          (any name/redirect URL works), then paste the Client ID here.
+        </p>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn-primary" id="simkl-connect-btn">Connect SIMKL</button>
+        </div>
+      </div>
+      <div id="simkl-connected" style="display:none">
+        <p class="steps">✅ Connected to SIMKL.</p>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn-secondary" id="simkl-disconnect-btn">Disconnect</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
       <h2>Backup &amp; Restore</h2>
       <p class="steps">
         Everything is stored only on this device — there's no account. If you reinstall the app, switch browsers,
@@ -126,6 +152,7 @@
 <script src="js/api.js"></script>
 <script src="js/addons.js"></script>
 <script src="js/stremio.js"></script>
+<script src="js/simkl.js"></script>
 <script src="js/player.js"></script>
 <script src="js/app.js"></script>
 </body>

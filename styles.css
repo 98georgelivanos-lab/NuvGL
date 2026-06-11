@@ -474,6 +474,18 @@ select { -webkit-appearance: none; appearance: none; }
 .sheet-option:last-child { border-bottom: none; }
 .sheet-option .check { color: var(--accent-2); font-weight: 700; }
 
+/* ---------- SIMKL ---------- */
+.simkl-pin-code {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-align: center;
+  margin: 14px 0;
+  padding: 14px;
+  background: var(--card-2);
+  border-radius: 12px;
+}
+
 /* ---------- Misc ---------- */
 .steps { margin: 0; padding-left: 20px; font-size: 13px; color: var(--muted); line-height: 1.7; }
 .steps code { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 5px; font-size: 12px; }

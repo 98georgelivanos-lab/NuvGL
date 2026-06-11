@@ -30,6 +30,8 @@ const DEFAULT_SETTINGS = {
   player: 'outplayer',
   customTemplate: 'outplayer://x-callback-url/play?url={encodedUrl}&filename={encodedTitle}',
   corsProxy: '',
+  simklClientId: '',
+  simklAccessToken: '',
 };
 
 const DEFAULT_ADDONS = [

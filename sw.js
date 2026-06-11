@@ -1,4 +1,4 @@
-const CACHE = 'streamfield-v1';
+const CACHE = 'streamfield-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   './js/api.js',
   './js/addons.js',
   './js/stremio.js',
+  './js/simkl.js',
   './js/player.js',
   './js/app.js',
   './icons/icon-192.png',
@@ -15,7 +16,15 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));
+  event.waitUntil(
+    caches.open(CACHE).then((cache) =>
+      Promise.all(
+        ASSETS.map((asset) =>
+          fetch(asset, { cache: 'reload' }).then((res) => cache.put(asset, res))
+        )
+      )
+    )
+  );
   self.skipWaiting();
 });
 
