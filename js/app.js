@@ -362,6 +362,7 @@ const App = {
         this.toast(`Added ${entry.manifest.name}`);
         this.renderAddonsScreen();
         this.renderHome();
+        Account.pushAddons().catch((e) => console.warn('Account sync push failed', e));
       } catch (e) {
         this.toast(e.message);
       }
@@ -395,6 +396,7 @@ const App = {
         Addons.remove(url);
         this.renderAddonsScreen();
         this.renderHome();
+        Account.pushAddons().catch((e2) => console.warn('Account sync push failed', e2));
       });
     });
   },
@@ -451,6 +453,80 @@ const App = {
     this.el('simkl-connect-btn').addEventListener('click', () => this.connectSimkl());
     this.el('simkl-disconnect-btn').addEventListener('click', () => this.disconnectSimkl());
     this.el('simkl-debug-btn').addEventListener('click', () => this.debugSimklWatching());
+
+    this.el('supabase-save-btn').addEventListener('click', () => {
+      const url = this.el('supabase-url-input').value.trim();
+      const key = this.el('supabase-key-input').value.trim();
+      if (!url || !key) {
+        this.toast('Enter both the Supabase URL and anon key');
+        return;
+      }
+      const settings = Store.getSettings();
+      settings.supabaseUrl = url;
+      settings.supabaseAnonKey = key;
+      Store.saveSettings(settings);
+      Account.reset();
+      this.renderSettingsScreen();
+    });
+
+    this.el('account-reset-config-btn').addEventListener('click', async () => {
+      await Account.signOut();
+      const settings = Store.getSettings();
+      settings.supabaseUrl = '';
+      settings.supabaseAnonKey = '';
+      Store.saveSettings(settings);
+      Account.reset();
+      this.renderSettingsScreen();
+    });
+
+    this.el('account-signin-btn').addEventListener('click', async () => {
+      const email = this.el('account-email-input').value.trim();
+      const password = this.el('account-password-input').value;
+      if (!email || !password) return;
+      try {
+        await Account.signIn(email, password);
+        this.el('account-password-input').value = '';
+        const added = await Account.syncAddons();
+        if (added) {
+          this.renderAddonsScreen();
+          this.renderHome();
+        }
+        this.toast(added ? `Signed in — synced ${added} addon(s)` : 'Signed in');
+        this.renderSettingsScreen();
+      } catch (e) {
+        this.toast(e.message || 'Sign in failed');
+      }
+    });
+
+    this.el('account-signup-btn').addEventListener('click', async () => {
+      const email = this.el('account-email-input').value.trim();
+      const password = this.el('account-password-input').value;
+      if (!email || !password) return;
+      try {
+        await Account.signUp(email, password);
+        this.toast('Account created — check your email to confirm, then sign in');
+      } catch (e) {
+        this.toast(e.message || 'Sign up failed');
+      }
+    });
+
+    this.el('account-signout-btn').addEventListener('click', async () => {
+      await Account.signOut();
+      this.renderSettingsScreen();
+    });
+
+    this.el('account-sync-btn').addEventListener('click', async () => {
+      try {
+        const added = await Account.syncAddons();
+        if (added) {
+          this.renderAddonsScreen();
+          this.renderHome();
+        }
+        this.toast(added ? `Synced ${added} new addon(s)` : 'Addons synced');
+      } catch (e) {
+        this.toast('Sync failed: ' + (e.message || 'unknown error'));
+      }
+    });
   },
 
   async debugSimklWatching() {
@@ -601,6 +677,27 @@ const App = {
     const connected = Simkl.isConnected();
     this.el('simkl-connected').style.display = connected ? 'block' : 'none';
     this.el('simkl-disconnected').style.display = connected ? 'none' : 'block';
+
+    this.updateAccountUI();
+  },
+
+  async updateAccountUI() {
+    const settings = Store.getSettings();
+    const configured = Account.isConfigured();
+    this.el('supabase-url-input').value = settings.supabaseUrl || '';
+    this.el('supabase-key-input').value = settings.supabaseAnonKey || '';
+    this.el('account-setup').style.display = configured ? 'none' : 'block';
+    this.el('account-signedout').style.display = 'none';
+    this.el('account-signedin').style.display = 'none';
+    if (!configured) return;
+
+    const session = await Account.getSession();
+    if (session) {
+      this.el('account-signedin').style.display = 'block';
+      this.el('account-email-display').textContent = session.user.email || '';
+    } else {
+      this.el('account-signedout').style.display = 'block';
+    }
   },
 };
 

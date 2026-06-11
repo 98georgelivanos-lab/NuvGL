@@ -32,6 +32,8 @@ const DEFAULT_SETTINGS = {
   corsProxy: '',
   simklClientId: '',
   simklAccessToken: '',
+  supabaseUrl: '',
+  supabaseAnonKey: '',
 };
 
 const DEFAULT_ADDONS = [
