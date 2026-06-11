@@ -122,4 +122,76 @@ const Simkl = {
     }
     return out;
   },
+
+  // ---------------- Last watched ----------------
+  // Most-recently-watched movies (completed) and episodes (from in-progress
+  // shows), newest first. Best-effort like getContinueWatching — bounded to
+  // recently-active items rather than a user's entire history.
+  async getLastWatched(limit = 10) {
+    if (!this.isConnected()) return [];
+    const candidates = [];
+
+    try {
+      const res = await fetch(`${this.API}/sync/all-items/movies/completed?extended=full`, { headers: this.headers() });
+      if (res.ok) {
+        const data = await res.json();
+        const movies = Array.isArray(data) ? data : data.movies || [];
+        for (const item of movies) {
+          const movie = item.movie || {};
+          const imdbId = movie.ids && movie.ids.imdb;
+          if (!imdbId || !item.last_watched_at) continue;
+          candidates.push({ imdbId, type: 'movie', title: movie.title, watchedAt: item.last_watched_at });
+        }
+      }
+    } catch (e) {
+      console.warn('SIMKL last-watched movies fetch failed', e);
+    }
+
+    try {
+      const res = await fetch(`${this.API}/sync/all-items/shows/watching?extended=full&episode_watched_at=yes`, { headers: this.headers() });
+      if (res.ok) {
+        const data = await res.json();
+        const shows = Array.isArray(data) ? data : data.shows || [];
+        for (const item of shows) {
+          const show = item.show || {};
+          const imdbId = show.ids && show.ids.imdb;
+          if (!imdbId) continue;
+          let latest = null;
+          for (const season of item.seasons || []) {
+            for (const ep of season.episodes || []) {
+              if (ep.watched_at && (!latest || ep.watched_at > latest.watched_at)) {
+                latest = { season: season.number, episode: ep.number, watched_at: ep.watched_at };
+              }
+            }
+          }
+          if (!latest) continue;
+          candidates.push({
+            imdbId, type: 'series', title: show.title,
+            watchedAt: latest.watched_at, season: latest.season, episode: latest.episode,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('SIMKL last-watched shows fetch failed', e);
+    }
+
+    candidates.sort((a, b) => new Date(b.watchedAt) - new Date(a.watchedAt));
+
+    const out = [];
+    for (const c of candidates.slice(0, limit)) {
+      try {
+        const meta = await Stremio.getMeta(c.type === 'movie' ? 'movie' : 'series', c.imdbId);
+        const baseName = (meta && meta.name) || c.title;
+        out.push({
+          id: c.imdbId,
+          type: c.type,
+          name: c.season != null ? `${baseName} — S${c.season}E${c.episode}` : baseName,
+          poster: meta && meta.poster,
+        });
+      } catch (e) {
+        console.warn('SIMKL last-watched: skipping item', e);
+      }
+    }
+    return out;
+  },
 };

@@ -124,20 +124,22 @@ const App = {
       return;
     }
 
-    const continueHtml = showContinue
-      ? `
-        <section class="catalog-section" id="cat-continue">
+    const simklSectionHtml = (id, title) => `
+        <section class="catalog-section" id="cat-${id}">
           <div class="section-head">
-            <h2>Continue Watching</h2>
+            <h2>${title}</h2>
             <span class="source">SIMKL</span>
           </div>
-          <div class="catalog-row" id="cat-row-continue">
+          <div class="catalog-row" id="cat-row-${id}">
             <div class="status"><div class="spinner"></div>Loading…</div>
           </div>
-        </section>`
+        </section>`;
+
+    const simklHtml = showContinue
+      ? simklSectionHtml('continue', 'Continue Watching') + simklSectionHtml('lastwatched', 'Last Watched')
       : '';
 
-    container.innerHTML = continueHtml + sections
+    container.innerHTML = simklHtml + sections
       .map((s, i) => `
         <section class="catalog-section" id="cat-${i}">
           <div class="section-head">
@@ -151,16 +153,19 @@ const App = {
       `)
       .join('');
 
-    if (showContinue) this.loadContinueWatching();
+    if (showContinue) {
+      this.loadSimklRow('continue', () => Simkl.getContinueWatching());
+      this.loadSimklRow('lastwatched', () => Simkl.getLastWatched());
+    }
     sections.forEach((s, i) => this.loadCatalogRow(s, i));
   },
 
-  async loadContinueWatching() {
-    const section = this.el('cat-continue');
+  async loadSimklRow(id, fetchItems) {
+    const section = this.el(`cat-${id}`);
     if (!section) return;
-    const row = this.el('cat-row-continue');
+    const row = this.el(`cat-row-${id}`);
     try {
-      const items = await Simkl.getContinueWatching();
+      const items = await fetchItems();
       if (!items.length) {
         section.remove();
         return;
@@ -170,7 +175,7 @@ const App = {
         card.addEventListener('click', () => this.openDetail(items[idx]));
       });
     } catch (e) {
-      console.warn('continue watching load failed', e);
+      console.warn(`SIMKL row "${id}" load failed`, e);
       section.remove();
     }
   },
