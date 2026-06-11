@@ -330,21 +330,24 @@ const App = {
   // ---------------- SIMKL tracking ----------------
   trackWatched(trackInfo) {
     if (!trackInfo || !Simkl.isConnected()) return;
-    try {
-      let ok;
-      if (trackInfo.kind === 'movie') {
-        ok = Simkl.markMovieWatched(trackInfo.imdbId, trackInfo.title, trackInfo.year);
-      } else if (trackInfo.kind === 'episode') {
-        ok = Simkl.markEpisodeWatched(trackInfo.showImdbId, trackInfo.title, trackInfo.year, trackInfo.season, trackInfo.episode);
-      }
-      if (ok && typeof ok.then === 'function') {
-        ok.then((success) => {
-          if (success) this.toast('Marked as watched on SIMKL');
-        });
-      }
-    } catch (e) {
-      console.warn('SIMKL tracking failed', e);
+    let promise;
+    if (trackInfo.kind === 'movie') {
+      promise = Simkl.markMovieWatched(trackInfo.imdbId, trackInfo.title, trackInfo.year);
+    } else if (trackInfo.kind === 'episode') {
+      promise = Simkl.markEpisodeWatched(trackInfo.showImdbId, trackInfo.title, trackInfo.year, trackInfo.season, trackInfo.episode);
     }
+    if (!promise || typeof promise.then !== 'function') return;
+    promise.then((result) => {
+      if (result.ok) {
+        this.toast('Marked as watched on SIMKL');
+      } else if (result.reason === 'not_found') {
+        this.toast('SIMKL didn\'t recognize this title');
+        console.warn('SIMKL: title not found', trackInfo, result.data);
+      } else {
+        this.toast('SIMKL sync failed');
+        console.warn('SIMKL sync error', trackInfo, result);
+      }
+    });
   },
 
   // ---------------- Addons screen ----------------
@@ -447,6 +450,44 @@ const App = {
 
     this.el('simkl-connect-btn').addEventListener('click', () => this.connectSimkl());
     this.el('simkl-disconnect-btn').addEventListener('click', () => this.disconnectSimkl());
+    this.el('simkl-debug-btn').addEventListener('click', () => this.debugSimklWatching());
+  },
+
+  async debugSimklWatching() {
+    this.showSheet(`<h3>SIMKL: Watching</h3><div class="status"><div class="spinner"></div>Loading…</div>`);
+    try {
+      const res = await fetch(`${Simkl.API}/sync/all-items/shows/watching?extended=full&episode_watched_at=yes`, {
+        headers: Simkl.headers(),
+      });
+      if (!res.ok) {
+        this.showSheet(`<h3>SIMKL: Watching</h3><div class="empty">Request failed (HTTP ${res.status}). Try reconnecting SIMKL.</div>`);
+        return;
+      }
+      const data = await res.json();
+      const shows = Array.isArray(data) ? data : data.shows || [];
+      if (!shows.length) {
+        this.showSheet(`
+          <h3>SIMKL: Watching (0)</h3>
+          <div class="empty">
+            SIMKL has no shows with status "watching" yet. Tap a stream for an episode in Streamfield, then check
+            back here — if it still doesn't appear, the title likely wasn't recognized by SIMKL (watch for a
+            "didn't recognize this title" toast).
+          </div>
+        `);
+        return;
+      }
+      const lines = shows.map((item) => {
+        const show = item.show || {};
+        const imdb = (show.ids && show.ids.imdb) || '—';
+        return `${show.title || '?'}\n  imdb: ${imdb} · status: ${item.status} · watched ${item.watched_episodes_count ?? '?'}/${item.total_episodes_count ?? '?'}`;
+      });
+      this.showSheet(`
+        <h3>SIMKL: Watching (${shows.length})</h3>
+        <pre style="white-space:pre-wrap;font-size:12px;line-height:1.7;margin:0">${escapeHtml(lines.join('\n\n'))}</pre>
+      `);
+    } catch (e) {
+      this.showSheet(`<h3>SIMKL: Watching</h3><div class="empty">Error: ${escapeHtml(e.message)}</div>`);
+    }
   },
 
   // ---------------- SIMKL connect ----------------

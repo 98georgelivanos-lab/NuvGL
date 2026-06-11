@@ -35,19 +35,29 @@ const Simkl = {
   },
 
   // ---------------- Sync / scrobble ----------------
+  // Returns { ok, reason?, data? } — ok is only true if SIMKL actually
+  // recognized the title (HTTP 2xx alone doesn't guarantee that; SIMKL
+  // returns a 200/201 with a `not_found` list for unrecognized ids).
   async addToHistory(payload) {
-    if (!this.isConnected()) return false;
+    if (!this.isConnected()) return { ok: false, reason: 'not_connected' };
+    let res;
     try {
-      const res = await fetch(`${this.API}/sync/history`, {
+      res = await fetch(`${this.API}/sync/history`, {
         method: 'POST',
         headers: this.headers(),
         body: JSON.stringify(payload),
       });
-      return res.ok;
     } catch (e) {
       console.warn('SIMKL history sync failed', e);
-      return false;
+      return { ok: false, reason: 'network_error' };
     }
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* no/invalid body */ }
+    if (!res.ok) return { ok: false, reason: 'http_error', status: res.status, data };
+    const nf = (data && data.not_found) || {};
+    const notFoundCount = (nf.movies || []).length + (nf.shows || []).length + (nf.episodes || []).length;
+    if (notFoundCount > 0) return { ok: false, reason: 'not_found', data };
+    return { ok: true, data };
   },
 
   markMovieWatched(imdbId, title, year) {
