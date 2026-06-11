@@ -1,4 +1,4 @@
-const CACHE = 'nuvio-web-v2';
+const CACHE = 'streamfield-v1';
 const ASSETS = [
   './',
   './index.html',

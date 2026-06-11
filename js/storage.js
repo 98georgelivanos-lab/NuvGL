@@ -1,8 +1,30 @@
 // Tiny localStorage helpers — all app state lives here, nothing server-side.
 const STORAGE_KEYS = {
+  addons: 'streamfield.addons',
+  settings: 'streamfield.settings',
+};
+
+// One-time migration from the old "Nuvio Web" storage keys, so renaming the
+// app doesn't wipe out anyone's existing addons/settings.
+const LEGACY_STORAGE_KEYS = {
   addons: 'nuvio.addons',
   settings: 'nuvio.settings',
 };
+
+(function migrateLegacyStorage() {
+  try {
+    if (localStorage.getItem(STORAGE_KEYS.addons) === null) {
+      const legacy = localStorage.getItem(LEGACY_STORAGE_KEYS.addons);
+      if (legacy !== null) localStorage.setItem(STORAGE_KEYS.addons, legacy);
+    }
+    if (localStorage.getItem(STORAGE_KEYS.settings) === null) {
+      const legacy = localStorage.getItem(LEGACY_STORAGE_KEYS.settings);
+      if (legacy !== null) localStorage.setItem(STORAGE_KEYS.settings, legacy);
+    }
+  } catch (e) {
+    // ignore (e.g. storage unavailable)
+  }
+})();
 
 const DEFAULT_SETTINGS = {
   player: 'outplayer',

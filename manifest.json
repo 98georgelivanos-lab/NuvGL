@@ -1,6 +1,6 @@
 {
-  "name": "Nuvio Web",
-  "short_name": "Nuvio Web",
+  "name": "Streamfield",
+  "short_name": "Streamfield",
   "description": "Browse Stremio addon catalogs and play streams in your favorite iOS player",
   "start_url": "./index.html",
   "scope": "./",

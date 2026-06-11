@@ -1,4 +1,4 @@
-// External player launchers for iOS, using the same URL schemes Nuvio's
+// External player launchers for iOS, using the same URL schemes the Nuvio
 // native app uses (see ExternalPlayerPlatform.ios.kt in NuvioMobile).
 const PLAYER_PRESETS = {
   outplayer: {
