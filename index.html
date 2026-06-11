@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Nuvio Web</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nuvio Web">
+<meta name="theme-color" content="#0b0d13">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Home -->
+  <div class="screen active" id="screen-home">
+    <div class="topbar"><h1>Nuvio Web</h1></div>
+    <div id="home-content"></div>
+  </div>
+
+  <!-- Search -->
+  <div class="screen" id="screen-search">
+    <div class="topbar"><h1>Search</h1></div>
+    <div class="search-wrap"><input type="text" id="search-input" placeholder="Search movies & shows…" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div id="search-content"></div>
+  </div>
+
+  <!-- Detail (pushed over the current tab) -->
+  <div class="screen" id="screen-detail">
+    <div id="detail-content"></div>
+  </div>
+
+  <!-- Addons -->
+  <div class="screen" id="screen-addons">
+    <div class="topbar"><h1>Addons</h1></div>
+    <div class="card">
+      <h2>Add Addon</h2>
+      <label class="field">Manifest URL</label>
+      <input type="url" id="addon-url-input" placeholder="https://example.com/manifest.json" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn-primary" id="addon-add-btn">Add Addon</button>
+      </div>
+      <p class="steps" style="margin-top:10px">
+        Add Stremio-compatible addons for catalogs, metadata, and streams. For playable streams, use a debrid-enabled
+        addon (e.g. Torrentio configured with Real-Debrid) so streams have a direct <code>url</code>.
+      </p>
+    </div>
+    <div class="card">
+      <h2>Installed</h2>
+      <div id="addon-list"></div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="screen" id="screen-settings">
+    <div class="topbar"><h1>Settings</h1></div>
+    <div class="card">
+      <h2>External Player</h2>
+      <label class="field">Open streams in</label>
+      <select id="player-select"></select>
+      <div id="custom-template-wrap" style="display:none">
+        <label class="field">Custom URL Template</label>
+        <input type="text" id="custom-template-input" placeholder="outplayer://x-callback-url/play?url={encodedUrl}&filename={encodedTitle}">
+        <p class="steps">
+          Placeholders: <code>{url}</code> <code>{encodedUrl}</code> <code>{title}</code> <code>{encodedTitle}</code>
+        </p>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Network</h2>
+      <label class="field">CORS Proxy (optional)</label>
+      <input type="text" id="cors-proxy-input" placeholder="https://corsproxy.io/?">
+      <p class="steps">If an addon's catalog or stream requests fail in Safari due to CORS, set a proxy prefix here — it will be prepended to addon request URLs.</p>
+    </div>
+    <div class="card">
+      <h2>About</h2>
+      <p class="steps">
+        Nuvio Web is a lightweight Stremio-addon client. Browse catalogs, search, pick a stream, and it launches
+        directly in your chosen iOS player via its URL scheme — same approach as the
+        <a href="https://github.com/NuvioMedia/NuvioMobile" target="_blank" rel="noopener">NuvioMobile</a> app's
+        external player integration.
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<!-- Bottom sheet (stream lists, pickers) -->
+<div class="sheet-backdrop" id="sheet-backdrop">
+  <div class="sheet" id="sheet">
+    <div class="handle"></div>
+    <div id="sheet-content"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Tab bar -->
+<div class="tabbar">
+  <button class="tab-btn active" data-tab="home"><span class="tab-icon">🏠</span>Home</button>
+  <button class="tab-btn" data-tab="search"><span class="tab-icon">🔍</span>Search</button>
+  <button class="tab-btn" data-tab="addons"><span class="tab-icon">🧩</span>Addons</button>
+  <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span>Settings</button>
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/api.js"></script>
+<script src="js/addons.js"></script>
+<script src="js/stremio.js"></script>
+<script src="js/player.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
