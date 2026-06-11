@@ -1,4 +1,4 @@
-const CACHE = 'nuvio-web-v1';
+const CACHE = 'nuvio-web-v2';
 const ASSETS = [
   './',
   './index.html',

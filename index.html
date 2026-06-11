@@ -76,6 +76,22 @@
       <p class="steps">If an addon's catalog or stream requests fail in Safari due to CORS, set a proxy prefix here — it will be prepended to addon request URLs.</p>
     </div>
     <div class="card">
+      <h2>Backup &amp; Restore</h2>
+      <p class="steps">
+        Everything is stored only on this device — there's no account. If you reinstall the app, switch browsers,
+        or set it up on another device, use this to carry your addons &amp; settings across.
+      </p>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn-secondary" id="copy-config-btn">Copy Config</button>
+        <button class="btn-secondary" id="copy-link-btn">Copy Share Link</button>
+      </div>
+      <label class="field">Restore from config</label>
+      <textarea id="import-config-input" rows="3" placeholder="Paste config JSON here…"></textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn-primary" id="import-config-btn">Import</button>
+      </div>
+    </div>
+    <div class="card">
       <h2>About</h2>
       <p class="steps">
         Nuvio Web is a lightweight Stremio-addon client. Browse catalogs, search, pick a stream, and it launches

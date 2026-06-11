@@ -16,6 +16,8 @@ const App = {
     this.bindSettingsScreen();
     this.bindSheet();
 
+    await this.maybeImportFromHash();
+
     await Addons.ensureDefaults();
     this.renderHome();
     this.renderAddonsScreen();
@@ -24,6 +26,40 @@ const App = {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
     }
+  },
+
+  // ---------------- Backup / restore ----------------
+  async maybeImportFromHash() {
+    const match = location.hash.match(/config=([^&]+)/);
+    if (!match) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    try {
+      const config = Store.parseConfigBase64(decodeURIComponent(match[1]));
+      const ok = confirm(`Import ${(config.addonUrls || []).length} addon(s) and settings from this link? This will be added to your current setup.`);
+      if (!ok) return;
+      await this.importConfig(config);
+      this.toast('Config imported');
+    } catch (e) {
+      console.warn('hash config import failed', e);
+      this.toast('Could not read config link');
+    }
+  },
+
+  async importConfig(config) {
+    Store.applySettingsFromConfig(config);
+    let added = 0;
+    for (const url of config.addonUrls || []) {
+      try {
+        await Addons.add(url);
+        added++;
+      } catch (e) {
+        // already installed or unreachable — skip
+      }
+    }
+    this.renderHome();
+    this.renderAddonsScreen();
+    this.renderSettingsScreen();
+    return added;
   },
 
   // ---------------- Tabs ----------------
@@ -315,6 +351,56 @@ const App = {
       settings.corsProxy = e.target.value.trim();
       Store.saveSettings(settings);
     });
+
+    this.el('copy-config-btn').addEventListener('click', () => {
+      this.copyToClipboard(Store.exportConfigString(), 'Config copied — paste it somewhere safe');
+    });
+
+    this.el('copy-link-btn').addEventListener('click', () => {
+      const link = `${location.origin}${location.pathname}#config=${encodeURIComponent(Store.exportConfigBase64())}`;
+      this.copyToClipboard(link, 'Share link copied — open it on another device to import');
+    });
+
+    this.el('import-config-btn').addEventListener('click', async () => {
+      const input = this.el('import-config-input');
+      const text = input.value.trim();
+      if (!text) return;
+      try {
+        const config = JSON.parse(text);
+        const added = await this.importConfig(config);
+        input.value = '';
+        this.toast(`Imported (${added} new addon${added === 1 ? '' : 's'})`);
+      } catch (e) {
+        this.toast('Invalid config JSON');
+      }
+    });
+  },
+
+  copyToClipboard(text, successMessage) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => this.toast(successMessage))
+        .catch(() => this.fallbackCopy(text, successMessage));
+    } else {
+      this.fallbackCopy(text, successMessage);
+    }
+  },
+
+  fallbackCopy(text, successMessage) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      this.toast(successMessage);
+    } catch (e) {
+      this.toast('Copy failed — select and copy manually');
+    }
+    document.body.removeChild(ta);
   },
 
   renderSettingsScreen() {
