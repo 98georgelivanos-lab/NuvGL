@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Streamfield — TV Sign-In</title>
+<meta name="theme-color" content="#0b0d13">
+<style>
+  body { margin: 0; background: #0b0d13; color: #e8eaf0; font-family: -apple-system, system-ui, sans-serif; display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+  .card { width: min(420px, calc(100vw - 48px)); background: #141823; border-radius: 16px; padding: 28px; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p { color: #9aa3b5; font-size: 14px; line-height: 1.6; margin: 0 0 18px; }
+  .code { font-size: 30px; font-weight: 700; letter-spacing: 6px; text-align: center; background: #0b0d13; border-radius: 10px; padding: 14px 0; margin-bottom: 18px; }
+  label { display: block; font-size: 12px; color: #9aa3b5; margin: 12px 0 6px; }
+  input { width: 100%; box-sizing: border-box; background: #0b0d13; border: 1px solid #2a3040; color: #e8eaf0; border-radius: 10px; padding: 12px 14px; font-size: 15px; }
+  button { width: 100%; margin-top: 18px; background: #1E88E5; color: #fff; border: 0; border-radius: 10px; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; }
+  .status { margin-top: 14px; font-size: 14px; text-align: center; color: #9aa3b5; }
+  .status.ok { color: #43A047; font-weight: 600; }
+  .status.err { color: #E53935; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Sign in your TV</h1>
+  <p id="intro">Approve this code to sign the Streamfield TV app into your account.</p>
+  <div class="code" id="code">——————</div>
+
+  <div id="auth-section" style="display:none">
+    <p>Sign in with your Streamfield account first:</p>
+    <label>Email</label>
+    <input type="email" id="email" autocomplete="email">
+    <label>Password</label>
+    <input type="password" id="password" autocomplete="current-password">
+    <button id="signin-btn">Sign In</button>
+  </div>
+
+  <div id="approve-section" style="display:none">
+    <p id="signed-in-as"></p>
+    <button id="approve-btn">Approve TV Sign-In</button>
+  </div>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script src="js/vendor/supabase.js"></script>
+<script>
+(function () {
+  var SUPABASE_URL = 'https://pflmerquxgpehmasqowk.supabase.co';
+  var SUPABASE_ANON_KEY = 'sb_publishable_lW_RKcu5WW6NMN8bqLC6Hg_z04Wo0_A';
+  var client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  var params = new URLSearchParams(location.search);
+  var code = (params.get('code') || '').toUpperCase();
+  var el = function (id) { return document.getElementById(id); };
+
+  el('code').textContent = code || '??????';
+  if (!code) {
+    el('status').textContent = 'Missing code — restart the QR sign-in on your TV and scan again.';
+    el('status').className = 'status err';
+    return;
+  }
+
+  function setStatus(msg, cls) {
+    el('status').textContent = msg;
+    el('status').className = 'status ' + (cls || '');
+  }
+
+  function showFor(session) {
+    var signedIn = !!session && !(session.user && session.user.is_anonymous);
+    el('auth-section').style.display = signedIn ? 'none' : 'block';
+    el('approve-section').style.display = signedIn ? 'block' : 'none';
+    if (signedIn) {
+      el('signed-in-as').textContent = 'Signed in as ' + (session.user.email || 'your account') + '.';
+    }
+  }
+
+  client.auth.getSession().then(function (res) { showFor(res.data.session); });
+
+  el('signin-btn').addEventListener('click', function () {
+    var email = el('email').value.trim();
+    var password = el('password').value;
+    if (!email || !password) return;
+    el('signin-btn').disabled = true;
+    setStatus('Signing in…');
+    client.auth.signInWithPassword({ email: email, password: password }).then(function (res) {
+      el('signin-btn').disabled = false;
+      if (res.error) {
+        setStatus(res.error.message || 'Sign in failed', 'err');
+        return;
+      }
+      setStatus('');
+      showFor(res.data.session);
+    });
+  });
+
+  el('approve-btn').addEventListener('click', function () {
+    el('approve-btn').disabled = true;
+    setStatus('Approving…');
+    client.rpc('approve_tv_login_session', { p_code: code }).then(function (res) {
+      if (res.error) {
+        el('approve-btn').disabled = false;
+        var msg = res.error.message || 'Approval failed';
+        setStatus(/not found|expired/i.test(msg) ? 'Code not found or expired — restart the QR sign-in on your TV.' : msg, 'err');
+        return;
+      }
+      setStatus('Approved! Your TV will finish signing in within a few seconds.', 'ok');
+    });
+  });
+})();
+</script>
+</body>
+</html>
