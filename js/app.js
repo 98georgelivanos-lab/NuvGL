@@ -786,7 +786,7 @@ const App = {
       this.showSheet(`
         <h3>Choose Avatar</h3>
         <div class="avatar-grid">
-          <button class="avatar-cell avatar-none" data-id="" title="No picture (colored initial)">A</button>
+          <button class="avatar-cell avatar-none" data-id="" title="No picture (colored initial)"><span>A</span></button>
           ${items.map((a) => `<button class="avatar-cell" data-id="${escapeAttr(a.id)}" data-file="${escapeAttr(a.file)}" title="${escapeAttr(a.name)}"><img src="avatars/${escapeAttr(a.file)}" loading="lazy" alt="${escapeAttr(a.name)}"></button>`).join('')}
         </div>
       `);
