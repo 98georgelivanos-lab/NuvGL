@@ -332,6 +332,8 @@ const Account = {
       profile_index: Store.profileSyncId(p.index),
       name: p.name,
       avatar_color_hex: p.avatarColorHex || '#1E88E5',
+      avatar_id: p.avatarId || null,
+      avatar_url: p.avatarUrl || null,
     }));
     const { error } = await client.rpc('sync_push_profiles', { p_client_max_profiles: 5, p_profiles: profiles });
     if (error) throw error;
@@ -366,6 +368,8 @@ const Account = {
         index,
         name: r.name,
         avatarColorHex: r.avatar_color_hex,
+        avatarId: r.avatar_id || undefined,
+        avatarUrl: r.avatar_url || undefined,
       });
     }
     const merged = [...map.values()].sort((a, b) => a.index - b.index);
@@ -389,6 +393,8 @@ const Account = {
         index,
         name: r.name,
         avatarColorHex: r.avatar_color_hex,
+        avatarId: r.avatar_id || undefined,
+        avatarUrl: r.avatar_url || undefined,
       });
     }
     for (const p of local) map.set(p.index, p);

@@ -646,9 +646,7 @@ const App = {
 
   updateProfileUI() {
     const profile = Store.getActiveProfile();
-    const initial = (profile.name || '?').slice(0, 1).toUpperCase();
-    const color = profile.avatarColorHex || '#1E88E5';
-    this.el('profile-btn-avatar').innerHTML = `<span class="profile-avatar" style="background:${escapeAttr(color)}">${escapeHtml(initial)}</span>`;
+    this.el('profile-btn-avatar').innerHTML = profileAvatarHtml(profile);
     const display = this.el('account-profile-display');
     if (display) display.textContent = profile.name;
   },
@@ -686,11 +684,12 @@ const App = {
           (p) => `
         <div class="sheet-option profile-row" data-index="${p.index}">
           <div class="profile-row-main">
-            <span class="profile-avatar" style="background:${escapeAttr(p.avatarColorHex || '#1E88E5')}">${escapeHtml((p.name || '?').slice(0, 1).toUpperCase())}</span>
+            ${profileAvatarHtml(p)}
             <span>${escapeHtml(p.name)}</span>
           </div>
           <div class="profile-row-actions">
             ${p.index === active ? '<span class="check">✓</span>' : ''}
+            <button class="btn-ghost profile-avatar-pick" data-index="${p.index}">🎭</button>
             <button class="btn-ghost profile-rename" data-index="${p.index}">✏️</button>
             ${profiles.length > 1 ? `<button class="btn-ghost danger profile-delete" data-index="${p.index}">🗑</button>` : ''}
           </div>
@@ -706,6 +705,13 @@ const App = {
       row.addEventListener('click', (e) => {
         if (e.target.closest('button')) return;
         this.switchProfile(Number(row.dataset.index));
+      });
+    });
+
+    this.el('sheet-content').querySelectorAll('.profile-avatar-pick').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.showAvatarPicker(Number(btn.dataset.index));
       });
     });
 
@@ -763,6 +769,49 @@ const App = {
       Account.syncProfilesAfterLocalChange().catch((e) => console.warn('Profile sync failed', e));
       this.switchProfile(newIndex);
     });
+  },
+
+  // ---------------- Avatar picker ----------------
+  // Catalog lives in avatars/ (manifest.json + images) and mirrors the
+  // Supabase avatar_catalog table the TV app reads — same ids, same files.
+  async showAvatarPicker(index) {
+    this.showSheet(`<h3>Choose Avatar</h3><div class="status"><div class="spinner"></div>Loading…</div>`);
+    try {
+      if (!this._avatarManifest) {
+        const res = await fetch('avatars/manifest.json');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        this._avatarManifest = await res.json();
+      }
+      const items = this._avatarManifest;
+      this.showSheet(`
+        <h3>Choose Avatar</h3>
+        <div class="avatar-grid">
+          <button class="avatar-cell avatar-none" data-id="" title="No picture (colored initial)">A</button>
+          ${items.map((a) => `<button class="avatar-cell" data-id="${escapeAttr(a.id)}" data-file="${escapeAttr(a.file)}" title="${escapeAttr(a.name)}"><img src="avatars/${escapeAttr(a.file)}" loading="lazy" alt="${escapeAttr(a.name)}"></button>`).join('')}
+        </div>
+      `);
+      this.el('sheet-content').querySelectorAll('.avatar-cell').forEach((cell) => {
+        cell.addEventListener('click', () => {
+          const all = Store.getProfiles();
+          const p = all.find((x) => x.index === index);
+          if (!p) return;
+          if (cell.dataset.id) {
+            p.avatarId = cell.dataset.id;
+            p.avatarUrl = `${AVATAR_BASE_URL}/${cell.dataset.file}`;
+          } else {
+            delete p.avatarId;
+            delete p.avatarUrl;
+          }
+          Store.saveProfiles(all);
+          this.updateProfileUI();
+          Account.syncProfilesAfterLocalChange().catch((e) => console.warn('Profile sync failed', e));
+          this.showProfileSheet();
+        });
+      });
+    } catch (e) {
+      console.warn('avatar manifest load failed', e);
+      this.showSheet(`<h3>Choose Avatar</h3><div class="empty">Could not load avatars — check your connection and try again.</div>`);
+    }
   },
 
   // ---------------- Settings screen ----------------
@@ -1050,6 +1099,18 @@ App.switchTab = function (tab) {
 };
 
 // ---------------- HTML helpers ----------------
+// Absolute base so synced avatar_url values render on every device,
+// including the TV app (which displays avatarUrl directly).
+const AVATAR_BASE_URL = 'https://98georgelivanos-lab.github.io/NuvGL/avatars';
+
+function profileAvatarHtml(p) {
+  if (p.avatarUrl) {
+    return `<span class="profile-avatar"><img src="${escapeAttr(p.avatarUrl)}" alt=""></span>`;
+  }
+  const initial = (p.name || '?').slice(0, 1).toUpperCase();
+  return `<span class="profile-avatar" style="background:${escapeAttr(p.avatarColorHex || '#1E88E5')}">${escapeHtml(initial)}</span>`;
+}
+
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

@@ -177,6 +177,50 @@ body {
 
 .profile-icon-btn .profile-avatar { font-size: 15px; }
 
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  gap: 10px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+
+.avatar-cell {
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+
+.avatar-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.avatar-cell.avatar-none {
+  background: #2a3040;
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .profile-row {
   cursor: pointer;
 }
