@@ -1,4 +1,4 @@
-const CACHE = 'streamfield-v5';
+const CACHE = 'streamfield-v6';
 const ASSETS = [
   './',
   './index.html',

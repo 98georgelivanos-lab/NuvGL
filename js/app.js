@@ -15,6 +15,8 @@ const App = {
     this.bindAddonsScreen();
     this.bindSettingsScreen();
     this.bindSheet();
+    this.bindProfileButton();
+    this.bindLibraryScreen();
 
     await this.maybeImportFromHash();
 
@@ -22,6 +24,22 @@ const App = {
     this.renderHome();
     this.renderAddonsScreen();
     this.renderSettingsScreen();
+    this.renderLibraryScreen();
+    this.updateProfileUI();
+
+    if (Account.isConfigured()) {
+      const session = await Account.getSession();
+      if (session) {
+        Account.syncAll()
+          .then((res) => {
+            this.renderAddonsScreen();
+            this.renderHome();
+            this.renderLibraryScreen();
+            if (res.addedAddons) this.toast(`Synced ${res.addedAddons} new addon(s)`);
+          })
+          .catch((e) => console.warn('Initial sync failed', e));
+      }
+    }
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -74,6 +92,7 @@ const App = {
     document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
     this.el(`screen-${tab}`).classList.add('active');
+    if (tab === 'library') this.renderLibraryScreen();
   },
 
   // ---------------- Toast ----------------
@@ -247,6 +266,9 @@ const App = {
     container.innerHTML = detailHtml(meta);
     this.el('detail-back').addEventListener('click', () => this.switchTab(this._lastTab || 'home'));
 
+    const libBtn = this.el('detail-library-btn');
+    if (libBtn) libBtn.addEventListener('click', () => this.toggleLibrary(meta));
+
     if (meta.type === 'series' && Array.isArray(meta.videos) && meta.videos.length) {
       this.bindSeriesPicker(meta);
     } else {
@@ -320,6 +342,7 @@ const App = {
           this.hideSheet();
           Player.launch(s.url, title);
           this.trackWatched(trackInfo);
+          this.recordWatch(type, id, title, trackInfo);
         });
       });
     } catch (e) {
@@ -348,6 +371,86 @@ const App = {
         console.warn('SIMKL sync error', trackInfo, result);
       }
     });
+  },
+
+  // ---------------- Watch progress / watched history ----------------
+  // Records that a stream was opened, both as a "watched history" entry and
+  // as a "continue watching" progress entry (position/duration are unknown
+  // since playback happens in an external player, so they're recorded as 0 —
+  // this still lets other devices/profiles see what was recently played).
+  recordWatch(type, id, title, trackInfo) {
+    const now = Date.now();
+    let contentId = id;
+    const contentType = type === 'series' ? 'series' : 'movie';
+    let season;
+    let episode;
+
+    if (trackInfo && trackInfo.kind === 'episode') {
+      contentId = trackInfo.showImdbId;
+      season = trackInfo.season;
+      episode = trackInfo.episode;
+    } else if (trackInfo && trackInfo.kind === 'movie') {
+      contentId = trackInfo.imdbId;
+    }
+
+    const watchedKey = (it) => `${it.content_type}:${it.content_id}:${it.season ?? ''}:${it.episode ?? ''}`;
+    const watchedEntry = { content_id: contentId, content_type: contentType, title, season, episode, watched_at: now };
+    const watchedItems = Store.getWatchedItems().filter((it) => watchedKey(it) !== watchedKey(watchedEntry));
+    watchedItems.unshift(watchedEntry);
+    Store.saveWatchedItems(watchedItems.slice(0, 200));
+    this.renderLibraryScreen();
+    Account.pushWatchedItems([watchedEntry]).catch((e) => console.warn('Watched history sync failed', e));
+
+    const progressKey = `${contentType}:${contentId}:${id}`;
+    const progress = Store.getWatchProgress();
+    progress[progressKey] = {
+      content_id: contentId,
+      content_type: contentType,
+      video_id: id,
+      season,
+      episode,
+      position: 0,
+      duration: 0,
+      last_watched: now,
+      progress_key: progressKey,
+    };
+    Store.saveWatchProgress(progress);
+    Account.pushWatchProgress([progress[progressKey]]).catch((e) => console.warn('Watch progress sync failed', e));
+  },
+
+  // ---------------- Library (bookmarks) ----------------
+  isInLibrary(meta) {
+    return Store.getLibrary().some((it) => it.content_id === meta.id && it.content_type === meta.type);
+  },
+
+  toggleLibrary(meta) {
+    const items = Store.getLibrary();
+    const idx = items.findIndex((it) => it.content_id === meta.id && it.content_type === meta.type);
+    if (idx >= 0) {
+      items.splice(idx, 1);
+      this.toast('Removed from library');
+    } else {
+      items.unshift({
+        content_id: meta.id,
+        content_type: meta.type,
+        name: meta.name,
+        poster: meta.poster || '',
+        poster_shape: meta.posterShape ? String(meta.posterShape).toUpperCase() : 'POSTER',
+        background: meta.background || '',
+        description: meta.description || '',
+        release_info: meta.releaseInfo || '',
+        imdb_rating: meta.imdbRating ? Number(meta.imdbRating) : null,
+        genres: meta.genres || meta.genre || [],
+        addon_base_url: '',
+        added_at: Date.now(),
+      });
+      this.toast('Added to library');
+    }
+    Store.saveLibrary(items);
+    const btn = this.el('detail-library-btn');
+    if (btn) btn.textContent = idx >= 0 ? '+ Add to Library' : '✓ In Library';
+    this.renderLibraryScreen();
+    Account.pushLibrary().catch((e) => console.warn('Library sync push failed', e));
   },
 
   // ---------------- Addons screen ----------------
@@ -398,6 +501,165 @@ const App = {
         this.renderHome();
         Account.pushAddons().catch((e2) => console.warn('Account sync push failed', e2));
       });
+    });
+  },
+
+  // ---------------- Library screen ----------------
+  bindLibraryScreen() {
+    document.querySelectorAll('#screen-library .seg-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#screen-library .seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        this.state.libraryTab = btn.dataset.seg;
+        this.renderLibraryScreen();
+      });
+    });
+  },
+
+  renderLibraryScreen() {
+    const tab = this.state.libraryTab || 'list';
+    const container = this.el('library-content');
+
+    if (tab === 'list') {
+      const items = Store.getLibrary();
+      if (!items.length) {
+        container.innerHTML = `<div class="empty">Your library is empty. Open a title and tap "Add to Library" to save it here.</div>`;
+        return;
+      }
+      container.innerHTML = `<div class="grid-results">${items.map((it) => posterCardHtml(it)).join('')}</div>`;
+      container.querySelectorAll('.poster-card').forEach((card, idx) => {
+        const it = items[idx];
+        card.addEventListener('click', () => this.openDetail({ id: it.content_id, type: it.content_type, name: it.name, poster: it.poster }));
+      });
+    } else {
+      const items = Store.getWatchedItems();
+      if (!items.length) {
+        container.innerHTML = `<div class="empty">No watch history yet — items you open will show up here.</div>`;
+        return;
+      }
+      container.innerHTML = items.map((it) => historyRowHtml(it)).join('');
+      container.querySelectorAll('.history-row').forEach((row, idx) => {
+        const it = items[idx];
+        row.addEventListener('click', () => this.openDetail({ id: it.content_id, type: it.content_type, name: it.title }));
+      });
+    }
+  },
+
+  // ---------------- Profiles ----------------
+  bindProfileButton() {
+    this.el('profile-btn').addEventListener('click', () => this.showProfileSheet());
+  },
+
+  updateProfileUI() {
+    const profile = Store.getActiveProfile();
+    const initial = (profile.name || '?').slice(0, 1).toUpperCase();
+    const color = profile.avatarColorHex || '#1E88E5';
+    this.el('profile-btn-avatar').innerHTML = `<span class="profile-avatar" style="background:${escapeAttr(color)}">${escapeHtml(initial)}</span>`;
+    const display = this.el('account-profile-display');
+    if (display) display.textContent = profile.name;
+  },
+
+  switchProfile(index) {
+    if (Store.getActiveProfileIndex() === index) {
+      this.hideSheet();
+      return;
+    }
+    Store.setActiveProfileIndex(index);
+    Addons.reload();
+    this.updateProfileUI();
+    this.renderHome();
+    this.renderAddonsScreen();
+    this.renderLibraryScreen();
+    this.hideSheet();
+    if (Account.isConfigured()) {
+      Account.syncAll()
+        .then(() => {
+          this.renderAddonsScreen();
+          this.renderHome();
+          this.renderLibraryScreen();
+        })
+        .catch((e) => console.warn('Profile sync failed', e));
+    }
+  },
+
+  showProfileSheet() {
+    const profiles = Store.getProfiles();
+    const active = Store.getActiveProfileIndex();
+    this.showSheet(`
+      <h3>Profiles</h3>
+      ${profiles
+        .map(
+          (p) => `
+        <div class="sheet-option profile-row" data-index="${p.index}">
+          <div class="profile-row-main">
+            <span class="profile-avatar" style="background:${escapeAttr(p.avatarColorHex || '#1E88E5')}">${escapeHtml((p.name || '?').slice(0, 1).toUpperCase())}</span>
+            <span>${escapeHtml(p.name)}</span>
+          </div>
+          <div class="profile-row-actions">
+            ${p.index === active ? '<span class="check">✓</span>' : ''}
+            <button class="btn-ghost profile-rename" data-index="${p.index}">✏️</button>
+            ${profiles.length > 1 ? `<button class="btn-ghost danger profile-delete" data-index="${p.index}">🗑</button>` : ''}
+          </div>
+        </div>`
+        )
+        .join('')}
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn-secondary" id="profile-add-btn">+ New Profile</button>
+      </div>
+    `);
+
+    this.el('sheet-content').querySelectorAll('.profile-row').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        this.switchProfile(Number(row.dataset.index));
+      });
+    });
+
+    this.el('sheet-content').querySelectorAll('.profile-rename').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = Number(btn.dataset.index);
+        const all = Store.getProfiles();
+        const p = all.find((x) => x.index === index);
+        const name = prompt('Profile name', p.name);
+        if (!name || !name.trim()) return;
+        p.name = name.trim();
+        Store.saveProfiles(all);
+        if (index === Store.getActiveProfileIndex()) this.updateProfileUI();
+        Account.pushProfiles().catch((e2) => console.warn('Profile sync failed', e2));
+        this.showProfileSheet();
+      });
+    });
+
+    this.el('sheet-content').querySelectorAll('.profile-delete').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = Number(btn.dataset.index);
+        const all = Store.getProfiles();
+        if (all.length <= 1) return;
+        const p = all.find((x) => x.index === index);
+        if (!confirm(`Delete profile "${p.name}"? This removes its addons, library, and history.`)) return;
+        const remaining = all.filter((x) => x.index !== index);
+        Store.saveProfiles(remaining);
+        Store.clearProfileData(index);
+        Account.deleteProfileData(index).catch((e2) => console.warn('Profile delete sync failed', e2));
+        Account.pushProfiles().catch((e2) => console.warn('Profile sync failed', e2));
+        if (Store.getActiveProfileIndex() === index) {
+          this.switchProfile(remaining[0].index);
+        } else {
+          this.showProfileSheet();
+        }
+      });
+    });
+
+    this.el('profile-add-btn').addEventListener('click', () => {
+      const name = prompt('New profile name');
+      if (!name || !name.trim()) return;
+      const all = Store.getProfiles();
+      const newIndex = Store.nextProfileIndex();
+      all.push({ index: newIndex, name: name.trim(), avatarColorHex: Store.nextAvatarColor() });
+      Store.saveProfiles(all);
+      Account.pushProfiles().catch((e) => console.warn('Profile sync failed', e));
+      this.switchProfile(newIndex);
     });
   },
 
@@ -486,12 +748,12 @@ const App = {
       try {
         await Account.signIn(email, password);
         this.el('account-password-input').value = '';
-        const added = await Account.syncAddons();
-        if (added) {
-          this.renderAddonsScreen();
-          this.renderHome();
-        }
-        this.toast(added ? `Signed in — synced ${added} addon(s)` : 'Signed in');
+        const { addedAddons } = await Account.syncAll();
+        this.renderAddonsScreen();
+        this.renderHome();
+        this.renderLibraryScreen();
+        this.updateProfileUI();
+        this.toast(addedAddons ? `Signed in — synced ${addedAddons} addon(s)` : 'Signed in');
         this.renderSettingsScreen();
       } catch (e) {
         this.toast(e.message || 'Sign in failed');
@@ -517,16 +779,18 @@ const App = {
 
     this.el('account-sync-btn').addEventListener('click', async () => {
       try {
-        const added = await Account.syncAddons();
-        if (added) {
-          this.renderAddonsScreen();
-          this.renderHome();
-        }
-        this.toast(added ? `Synced ${added} new addon(s)` : 'Addons synced');
+        const { addedAddons } = await Account.syncAll();
+        this.renderAddonsScreen();
+        this.renderHome();
+        this.renderLibraryScreen();
+        this.updateProfileUI();
+        this.toast(addedAddons ? `Synced — ${addedAddons} new addon(s)` : 'Synced');
       } catch (e) {
         this.toast('Sync failed: ' + (e.message || 'unknown error'));
       }
     });
+
+    this.el('account-profiles-btn').addEventListener('click', () => this.showProfileSheet());
   },
 
   async debugSimklWatching() {
@@ -673,6 +937,7 @@ const App = {
     this.el('cors-proxy-input').value = settings.corsProxy;
     this.el('custom-template-wrap').style.display = settings.player === 'custom' ? 'block' : 'none';
     this.el('simkl-client-id-input').value = settings.simklClientId;
+    this.updateProfileUI();
 
     const connected = Simkl.isConnected();
     this.el('simkl-connected').style.display = connected ? 'block' : 'none';
@@ -731,6 +996,18 @@ function posterCardHtml(m) {
     </div>`;
 }
 
+function historyRowHtml(it) {
+  const sub = it.season != null && it.episode != null ? `S${it.season}E${it.episode}` : (it.content_type === 'series' ? 'Series' : 'Movie');
+  const date = it.watched_at ? new Date(it.watched_at).toLocaleString() : '';
+  return `
+    <div class="history-row">
+      <div class="meta">
+        <div class="name">${escapeHtml(it.title)}</div>
+        <div class="sub">${escapeHtml([sub, date].filter(Boolean).join(' · '))}</div>
+      </div>
+    </div>`;
+}
+
 function detailSkeletonHtml(m) {
   return `
     <div class="detail-hero">
@@ -761,6 +1038,8 @@ function detailHtml(meta) {
     body = `<button class="btn-primary" id="detail-find-streams">Find Streams</button>`;
   }
 
+  const inLibrary = App.isInLibrary(meta);
+
   return `
     <div class="detail-hero">
       ${bg ? `<img src="${escapeAttr(bg)}" alt="">` : ''}
@@ -770,6 +1049,9 @@ function detailHtml(meta) {
       <h1>${escapeHtml(meta.name)}</h1>
       ${sub ? `<div class="sub">${escapeHtml(sub)}</div>` : ''}
       ${meta.description ? `<div class="desc">${escapeHtml(meta.description)}</div>` : ''}
+      <div class="btn-row">
+        <button class="btn-secondary" id="detail-library-btn">${inLibrary ? '✓ In Library' : '+ Add to Library'}</button>
+      </div>
       ${body}
     </div>`;
 }

@@ -17,7 +17,11 @@
 
   <!-- Home -->
   <div class="screen active" id="screen-home">
-    <div class="topbar"><h1>Streamfield</h1></div>
+    <div class="topbar">
+      <h1>Streamfield</h1>
+      <div class="spacer"></div>
+      <button class="icon-btn profile-icon-btn" id="profile-btn"><span id="profile-btn-avatar"></span></button>
+    </div>
     <div id="home-content"></div>
   </div>
 
@@ -31,6 +35,16 @@
   <!-- Detail (pushed over the current tab) -->
   <div class="screen" id="screen-detail">
     <div id="detail-content"></div>
+  </div>
+
+  <!-- Library -->
+  <div class="screen" id="screen-library">
+    <div class="topbar"><h1>Library</h1></div>
+    <div class="segmented">
+      <button class="seg-btn active" data-seg="list">My List</button>
+      <button class="seg-btn" data-seg="history">History</button>
+    </div>
+    <div id="library-content"></div>
   </div>
 
   <!-- Addons -->
@@ -135,9 +149,13 @@
       </div>
       <div id="account-signedin" style="display:none">
         <p class="steps">✅ Signed in as <strong id="account-email-display"></strong></p>
+        <p class="steps">Profile: <strong id="account-profile-display"></strong></p>
         <div class="btn-row" style="margin-top:10px">
-          <button class="btn-secondary" id="account-sync-btn">Sync Addons Now</button>
+          <button class="btn-secondary" id="account-sync-btn">Sync Now</button>
           <button class="btn-ghost" id="account-signout-btn">Sign Out</button>
+        </div>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn-ghost" id="account-profiles-btn">Manage Profiles</button>
         </div>
       </div>
     </div>
@@ -184,6 +202,7 @@
 <div class="tabbar">
   <button class="tab-btn active" data-tab="home"><span class="tab-icon">🏠</span>Home</button>
   <button class="tab-btn" data-tab="search"><span class="tab-icon">🔍</span>Search</button>
+  <button class="tab-btn" data-tab="library"><span class="tab-icon">📚</span>Library</button>
   <button class="tab-btn" data-tab="addons"><span class="tab-icon">🧩</span>Addons</button>
   <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span>Settings</button>
 </div>

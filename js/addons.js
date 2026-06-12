@@ -11,6 +11,12 @@ const Addons = {
     Store.saveAddons(this._cache || []);
   },
 
+  // Drop the cached list so the next list() call re-reads the active
+  // profile's addons (called after switching profiles).
+  reload() {
+    this._cache = null;
+  },
+
   baseUrlFromManifest(manifestUrl) {
     return manifestUrl.replace(/\/manifest\.json.*$/, '');
   },
