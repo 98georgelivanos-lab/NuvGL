@@ -136,29 +136,40 @@ const App = {
       }
     }
 
-    const showContinue = Simkl.isConnected();
+    // Continue Watching / Last Watched come from the Streamfield account's
+    // synced history (works locally too); SIMKL rows are the fallback for
+    // SIMKL users with no local/synced history yet.
+    const watchedItems = Store.getWatchedItems();
+    const progressEntries = Object.values(Store.getWatchProgress());
+    const hasAccountRows = watchedItems.length > 0 || progressEntries.some((p) => p.position > 0 && p.duration > 0);
+    const showSimklRows = Simkl.isConnected() && !hasAccountRows;
 
-    if (!sections.length && !showContinue) {
+    if (!sections.length && !hasAccountRows && !showSimklRows) {
       container.innerHTML = `<div class="empty">No catalogs available. Add an addon in the Addons tab.</div>`;
       return;
     }
 
-    const simklSectionHtml = (id, title) => `
+    const rowSectionHtml = (id, title, source) => `
         <section class="catalog-section" id="cat-${id}">
           <div class="section-head">
             <h2>${title}</h2>
-            <span class="source">SIMKL</span>
+            <span class="source">${source}</span>
           </div>
           <div class="catalog-row" id="cat-row-${id}">
             <div class="status"><div class="spinner"></div>Loading…</div>
           </div>
         </section>`;
 
-    const simklHtml = showContinue
-      ? simklSectionHtml('continue', 'Continue Watching') + simklSectionHtml('lastwatched', 'Last Watched')
-      : '';
+    let topRowsHtml = '';
+    if (hasAccountRows) {
+      topRowsHtml = rowSectionHtml('continue', 'Continue Watching', 'Streamfield')
+        + rowSectionHtml('lastwatched', 'Last Watched', 'Streamfield');
+    } else if (showSimklRows) {
+      topRowsHtml = rowSectionHtml('continue', 'Continue Watching', 'SIMKL')
+        + rowSectionHtml('lastwatched', 'Last Watched', 'SIMKL');
+    }
 
-    container.innerHTML = simklHtml + sections
+    container.innerHTML = topRowsHtml + sections
       .map((s, i) => `
         <section class="catalog-section" id="cat-${i}">
           <div class="section-head">
@@ -172,14 +183,17 @@ const App = {
       `)
       .join('');
 
-    if (showContinue) {
-      this.loadSimklRow('continue', () => Simkl.getContinueWatching());
-      this.loadSimklRow('lastwatched', () => Simkl.getLastWatched());
+    if (hasAccountRows) {
+      this.loadHomeRow('continue', () => this.getAccountContinueWatching());
+      this.loadHomeRow('lastwatched', () => this.getAccountLastWatched());
+    } else if (showSimklRows) {
+      this.loadHomeRow('continue', () => Simkl.getContinueWatching());
+      this.loadHomeRow('lastwatched', () => Simkl.getLastWatched());
     }
     sections.forEach((s, i) => this.loadCatalogRow(s, i));
   },
 
-  async loadSimklRow(id, fetchItems) {
+  async loadHomeRow(id, fetchItems) {
     const section = this.el(`cat-${id}`);
     if (!section) return;
     const row = this.el(`cat-row-${id}`);
@@ -215,6 +229,84 @@ const App = {
       console.warn('catalog load failed', section.addon.manifest.name, section.catalog.id, e);
       this.el(`cat-${index}`).remove();
     }
+  },
+
+  // ---------------- Streamfield home rows ----------------
+  // Short-lived meta cache so Continue Watching / Last Watched (which often
+  // reference the same titles) don't refetch meta on every home render.
+  cachedMeta(type, id) {
+    if (!this._metaCache) this._metaCache = new Map();
+    const key = `${type}:${id}`;
+    if (!this._metaCache.has(key)) {
+      this._metaCache.set(key, Stremio.getMeta(type, id).catch(() => null));
+    }
+    return this._metaCache.get(key);
+  },
+
+  // Resume entries from watch progress (real positions come from the TV app
+  // via the account), plus SIMKL-style "next episode" entries derived from
+  // the watched history for shows with no in-progress entry.
+  async getAccountContinueWatching(limit = 10) {
+    const inProgress = Object.values(Store.getWatchProgress())
+      .filter((p) => p.position > 0 && p.duration > 0 && p.position / p.duration < 0.95)
+      .sort((a, b) => (b.last_watched || 0) - (a.last_watched || 0));
+
+    const latestEpisode = new Map();
+    for (const it of Store.getWatchedItems()) {
+      if (it.content_type !== 'series' || it.season == null || it.episode == null || it.season === 0) continue;
+      const cur = latestEpisode.get(it.content_id);
+      if (!cur || (it.watched_at || 0) > (cur.watched_at || 0)) latestEpisode.set(it.content_id, it);
+    }
+
+    const out = [];
+    const seenShows = new Set();
+
+    for (const p of inProgress.slice(0, limit)) {
+      try {
+        const type = p.content_type === 'series' ? 'series' : 'movie';
+        const meta = await this.cachedMeta(type, p.content_id);
+        const baseName = (meta && meta.name) || p.content_id;
+        const suffix = p.season != null && p.episode != null ? ` — S${p.season}E${p.episode}` : '';
+        const pct = Math.round((p.position / p.duration) * 100);
+        out.push({ id: p.content_id, type, name: `${baseName}${suffix} · ${pct}%`, poster: meta && meta.poster, _ts: p.last_watched || 0 });
+        seenShows.add(p.content_id);
+      } catch (e) {
+        console.warn('continue-watching: skipping item', e);
+      }
+    }
+
+    for (const [contentId, seed] of latestEpisode) {
+      if (out.length >= limit) break;
+      if (seenShows.has(contentId)) continue;
+      try {
+        const meta = await this.cachedMeta('series', contentId);
+        if (!meta || !Array.isArray(meta.videos)) continue;
+        const next = meta.videos
+          .filter((v) => v.season > 0 && v.episode > 0)
+          .sort((a, b) => a.season - b.season || a.episode - b.episode)
+          .find((v) => v.season > seed.season || (v.season === seed.season && v.episode > seed.episode));
+        if (!next) continue;
+        out.push({ id: contentId, type: 'series', name: `${meta.name || seed.title} — S${next.season}E${next.episode}`, poster: meta.poster, _ts: seed.watched_at || 0 });
+      } catch (e) {
+        console.warn('continue-watching: skipping show', e);
+      }
+    }
+
+    return out.sort((a, b) => b._ts - a._ts).slice(0, limit);
+  },
+
+  // Most recent watched-history entries (movies and episodes), newest first.
+  async getAccountLastWatched(limit = 10) {
+    const items = Store.getWatchedItems().slice(0, limit);
+    const out = [];
+    for (const it of items) {
+      const type = it.content_type === 'series' ? 'series' : 'movie';
+      const meta = await this.cachedMeta(type, it.content_id);
+      const baseName = (meta && meta.name) || it.title;
+      const suffix = it.season != null && it.episode != null ? ` — S${it.season}E${it.episode}` : '';
+      out.push({ id: it.content_id, type, name: `${baseName}${suffix}`, poster: (meta && meta.poster) || '' });
+    }
+    return out;
   },
 
   // ---------------- Search ----------------
@@ -399,6 +491,7 @@ const App = {
     watchedItems.unshift(watchedEntry);
     Store.saveWatchedItems(watchedItems.slice(0, 200));
     this.renderLibraryScreen();
+    this.renderHome();
     Account.pushWatchedItems([watchedEntry]).catch((e) => console.warn('Watched history sync failed', e));
 
     const progressKey = `${contentType}:${contentId}:${id}`;
