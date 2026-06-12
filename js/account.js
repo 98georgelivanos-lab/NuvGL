@@ -1,37 +1,27 @@
-// Optional account sync — Supabase-backed addons, library, watch progress,
-// watched history and profiles, so the same data can be shared across
-// devices/profiles/apps pointed at the same project (e.g. a future NuvioTV
-// build using the same schema, see supabase/schema.sql).
+// Streamfield account sync — Supabase-backed addons, library, watch progress,
+// watched history and profiles, shared with the Streamfield TV app (same
+// project and schema, see supabase/schema.sql). Users just sign up with an
+// email/password; the project credentials are baked in below.
 //
 // Plugins are intentionally not synced from this client.
+const SUPABASE_URL = 'https://pflmerquxgpehmasqowk.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_lW_RKcu5WW6NMN8bqLC6Hg_z04Wo0_A';
+
 const Account = {
   client: null,
-  _url: null,
-  _key: null,
 
   isConfigured() {
-    const s = Store.getSettings();
-    return !!(s.supabaseUrl && s.supabaseAnonKey);
+    // The supabase-js bundle is vendored locally, but guard anyway so a
+    // failed script load (or very old cached shell) degrades gracefully.
+    return typeof window.supabase !== 'undefined';
   },
 
   client_() {
-    const s = Store.getSettings();
-    if (!s.supabaseUrl || !s.supabaseAnonKey) {
-      this.client = null;
-      return null;
-    }
-    if (!this.client || this._url !== s.supabaseUrl || this._key !== s.supabaseAnonKey) {
-      this.client = window.supabase.createClient(s.supabaseUrl, s.supabaseAnonKey);
-      this._url = s.supabaseUrl;
-      this._key = s.supabaseAnonKey;
+    if (!this.isConfigured()) return null;
+    if (!this.client) {
+      this.client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     }
     return this.client;
-  },
-
-  reset() {
-    this.client = null;
-    this._url = null;
-    this._key = null;
   },
 
   async getSession() {
@@ -43,14 +33,14 @@ const Account = {
 
   async signUp(email, password) {
     const client = this.client_();
-    if (!client) throw new Error('Configure Supabase first');
+    if (!client) throw new Error('Account service unavailable — try reloading the app');
     const { error } = await client.auth.signUp({ email, password });
     if (error) throw error;
   },
 
   async signIn(email, password) {
     const client = this.client_();
-    if (!client) throw new Error('Configure Supabase first');
+    if (!client) throw new Error('Account service unavailable — try reloading the app');
     const { error } = await client.auth.signInWithPassword({ email, password });
     if (error) throw error;
   },
@@ -97,6 +87,16 @@ const Account = {
     return data || [];
   },
 
+  // Same canonical form the TV app uses (strip trailing slash and
+  // /manifest.json) so URL variations don't duplicate addons across devices.
+  canonicalAddonUrl(url) {
+    const trimmed = String(url || '').trim().replace(/\/+$/, '');
+    const queryStart = trimmed.indexOf('?');
+    const path = queryStart >= 0 ? trimmed.slice(0, queryStart) : trimmed;
+    const query = queryStart >= 0 ? trimmed.slice(queryStart) : '';
+    return path.replace(/\/manifest\.json$/i, '').replace(/\/+$/, '') + query;
+  },
+
   // Pull addons that exist remotely but not locally, install them, then push
   // the merged list back so both sides end up in sync. Returns the number of
   // addons newly added locally.
@@ -104,7 +104,8 @@ const Account = {
     const remote = await this.pullAddons();
     let added = 0;
     for (const r of remote) {
-      if (Addons.list().some((a) => a.manifestUrl === r.url)) continue;
+      const canonical = this.canonicalAddonUrl(r.url);
+      if (Addons.list().some((a) => this.canonicalAddonUrl(a.manifestUrl) === canonical)) continue;
       try {
         await Addons.add(r.url);
         added++;
@@ -155,38 +156,49 @@ const Account = {
     return data || [];
   },
 
-  // Merge remote library items into the local list (newer added_at wins),
-  // then push the merged set back so both sides converge.
+  // Remove library items server-side (mirrors a local removal — without this
+  // the next pull would resurrect them, since push is upsert-only).
+  // keys: [{ content_id, content_type }]
+  async deleteLibraryItems(keys) {
+    const client = this.client_();
+    if (!client) return;
+    const session = await this.getSession();
+    if (!session) return;
+    if (!keys || !keys.length) return;
+    const { error } = await client.rpc('sync_delete_library', { p_keys: keys, p_profile_id: this.profileId() });
+    if (error) throw error;
+  },
+
+  // The remote library is authoritative: local adds/removes push immediately
+  // (pushLibrary/deleteLibraryItems), so a routine sync just replaces the
+  // local list with the server's — the same semantics the TV app uses, which
+  // is what lets deletions made on other devices stick. The one exception is
+  // a first sync against an empty account, where local items seed the server.
   async syncLibrary() {
     const remote = await this.pullLibrary();
     const local = Store.getLibrary();
-    const key = (it) => `${it.content_type}:${it.content_id}`;
-    const map = new Map();
-    for (const it of local) map.set(key(it), it);
-    for (const r of remote) {
-      const k = key(r);
-      const existing = map.get(k);
-      if (!existing || (r.added_at || 0) >= (existing.added_at || 0)) {
-        map.set(k, {
-          content_id: r.content_id,
-          content_type: r.content_type,
-          name: r.name,
-          poster: r.poster,
-          poster_shape: r.poster_shape,
-          background: r.background,
-          description: r.description,
-          release_info: r.release_info,
-          imdb_rating: r.imdb_rating,
-          genres: r.genres || [],
-          addon_base_url: r.addon_base_url,
-          added_at: r.added_at,
-        });
-      }
+    if (!remote.length && local.length) {
+      await this.pushLibrary();
+      return local;
     }
-    const merged = [...map.values()].sort((a, b) => (b.added_at || 0) - (a.added_at || 0));
-    Store.saveLibrary(merged);
-    await this.pushLibrary();
-    return merged;
+    const items = remote
+      .map((r) => ({
+        content_id: r.content_id,
+        content_type: r.content_type,
+        name: r.name,
+        poster: r.poster,
+        poster_shape: r.poster_shape,
+        background: r.background,
+        description: r.description,
+        release_info: r.release_info,
+        imdb_rating: r.imdb_rating,
+        genres: r.genres || [],
+        addon_base_url: r.addon_base_url,
+        added_at: r.added_at,
+      }))
+      .sort((a, b) => (b.added_at || 0) - (a.added_at || 0));
+    Store.saveLibrary(items);
+    return items;
   },
 
   // ---------------- Watch progress sync ----------------
@@ -356,6 +368,30 @@ const Account = {
         avatarColorHex: r.avatar_color_hex,
       });
     }
+    const merged = [...map.values()].sort((a, b) => a.index - b.index);
+    Store.saveProfiles(merged);
+    await this.pushProfiles();
+    return merged;
+  },
+
+  // After a local rename/add/delete: pull first so profiles created on other
+  // devices survive the push (sync_push_profiles deletes rows missing from
+  // the pushed set), but let local values win for indices this device knows.
+  // deletedIndex stops a just-deleted profile being re-added from remote.
+  async syncProfilesAfterLocalChange(deletedIndex = null) {
+    const remote = await this.pullProfiles();
+    const local = Store.getProfiles();
+    const map = new Map();
+    for (const r of remote) {
+      const index = r.profile_index - 1;
+      if (index < 0 || index === deletedIndex) continue;
+      map.set(index, {
+        index,
+        name: r.name,
+        avatarColorHex: r.avatar_color_hex,
+      });
+    }
+    for (const p of local) map.set(p.index, p);
     const merged = [...map.values()].sort((a, b) => a.index - b.index);
     Store.saveProfiles(merged);
     await this.pushProfiles();

@@ -119,21 +119,12 @@
       </div>
     </div>
     <div class="card">
-      <h2>Account Sync</h2>
+      <h2>Streamfield Account</h2>
       <p class="steps">
-        Optional. Sign in to sync your addon list with other apps/devices pointed at the same
-        <a href="https://supabase.com" target="_blank" rel="noopener">Supabase</a> project (e.g. a
-        future NuvioTV build using the same schema). Everything still works locally without this.
+        Optional. Create a free Streamfield account to sync your addons, library, profiles, and
+        watch history across devices — including the Streamfield TV app signed into the same
+        account. Everything still works locally without one.
       </p>
-      <div id="account-setup">
-        <label class="field">Supabase Project URL</label>
-        <input type="text" id="supabase-url-input" placeholder="https://xxxx.supabase.co" autocomplete="off" autocorrect="off" spellcheck="false">
-        <label class="field">Supabase Anon Key</label>
-        <input type="text" id="supabase-key-input" placeholder="eyJhbGciOi..." autocomplete="off" autocorrect="off" spellcheck="false">
-        <div class="btn-row" style="margin-top:10px">
-          <button class="btn-primary" id="supabase-save-btn">Save</button>
-        </div>
-      </div>
       <div id="account-signedout" style="display:none">
         <label class="field">Email</label>
         <input type="email" id="account-email-input" placeholder="you@example.com" autocomplete="email">
@@ -141,10 +132,7 @@
         <input type="password" id="account-password-input" placeholder="Password" autocomplete="current-password">
         <div class="btn-row" style="margin-top:10px">
           <button class="btn-primary" id="account-signin-btn">Sign In</button>
-          <button class="btn-secondary" id="account-signup-btn">Sign Up</button>
-        </div>
-        <div class="btn-row" style="margin-top:10px">
-          <button class="btn-ghost" id="account-reset-config-btn">Change Supabase Project</button>
+          <button class="btn-secondary" id="account-signup-btn">Create Account</button>
         </div>
       </div>
       <div id="account-signedin" style="display:none">
@@ -207,7 +195,7 @@
   <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span>Settings</button>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="js/vendor/supabase.js"></script>
 <script src="js/storage.js"></script>
 <script src="js/api.js"></script>
 <script src="js/addons.js"></script>

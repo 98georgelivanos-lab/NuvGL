@@ -416,6 +416,36 @@ $$;
 
 grant execute on function public.sync_pull_library(int, int, int) to authenticated;
 
+-- Remove library items server-side when they're deleted locally — without
+-- this, sync_push_library (upsert-only) can never propagate a removal and
+-- the next pull resurrects deleted items on every client.
+-- p_keys: [{ "content_id": "...", "content_type": "..." }, ...]
+create or replace function public.sync_delete_library(p_keys jsonb default '[]'::jsonb, p_profile_id int default 1)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid := public.get_sync_owner();
+  item jsonb;
+begin
+  if uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  for item in select * from jsonb_array_elements(p_keys) loop
+    delete from public.library_items
+    where user_id = uid
+      and profile_id = p_profile_id
+      and content_id = item->>'content_id'
+      and content_type = item->>'content_type';
+  end loop;
+end;
+$$;
+
+grant execute on function public.sync_delete_library(jsonb, int) to authenticated;
+
 -- ============================================================================
 -- Watch progress (with delta change-log for incremental sync)
 -- ============================================================================

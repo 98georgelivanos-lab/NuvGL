@@ -57,8 +57,6 @@ const DEFAULT_SETTINGS = {
   corsProxy: '',
   simklClientId: '',
   simklAccessToken: '',
-  supabaseUrl: '',
-  supabaseAnonKey: '',
 };
 
 const DEFAULT_ADDONS = [
@@ -66,6 +64,14 @@ const DEFAULT_ADDONS = [
 ];
 
 const PROFILE_AVATAR_COLORS = ['#1E88E5', '#E53935', '#43A047', '#FB8C00', '#8E24AA', '#00ACC1'];
+
+// Matches the schema's sync_push_profiles cap and the TV app's 1-5 profile
+// ids — a 6th profile would silently never sync (the RPC drops extras).
+const MAX_PROFILES = 5;
+
+// Continue-watching entries beyond this are dropped (oldest first) so the
+// per-profile watch progress map can't grow unbounded in localStorage.
+const MAX_WATCH_PROGRESS_ENTRIES = 200;
 
 function loadJSON(key, fallback) {
   try {
@@ -114,9 +120,18 @@ const Store = {
     return (index ?? this.getActiveProfileIndex()) + 1;
   },
 
+  canAddProfile() {
+    return this.getProfiles().length < MAX_PROFILES;
+  },
+
+  // Lowest unused index in 0..MAX_PROFILES-1 (indices must stay within the
+  // synced range, so freed indices get reused). Returns null when full.
   nextProfileIndex() {
-    const profiles = this.getProfiles();
-    return profiles.length ? Math.max(...profiles.map((p) => p.index)) + 1 : 0;
+    const used = new Set(this.getProfiles().map((p) => p.index));
+    for (let i = 0; i < MAX_PROFILES; i++) {
+      if (!used.has(i)) return i;
+    }
+    return null;
   },
 
   nextAvatarColor() {
@@ -153,6 +168,11 @@ const Store = {
     return loadJSON(profileStorageKey('watchProgress', profileIndex ?? this.getActiveProfileIndex()), {});
   },
   saveWatchProgress(map, profileIndex) {
+    const entries = Object.entries(map);
+    if (entries.length > MAX_WATCH_PROGRESS_ENTRIES) {
+      entries.sort((a, b) => (b[1].last_watched || 0) - (a[1].last_watched || 0));
+      map = Object.fromEntries(entries.slice(0, MAX_WATCH_PROGRESS_ENTRIES));
+    }
     saveJSON(profileStorageKey('watchProgress', profileIndex ?? this.getActiveProfileIndex()), map);
   },
 

@@ -429,6 +429,8 @@ const App = {
     if (idx >= 0) {
       items.splice(idx, 1);
       this.toast('Removed from library');
+      Account.deleteLibraryItems([{ content_id: meta.id, content_type: meta.type }])
+        .catch((e) => console.warn('Library delete sync failed', e));
     } else {
       items.unshift({
         content_id: meta.id,
@@ -603,7 +605,7 @@ const App = {
         )
         .join('')}
       <div class="btn-row" style="margin-top:14px">
-        <button class="btn-secondary" id="profile-add-btn">+ New Profile</button>
+        ${Store.canAddProfile() ? '<button class="btn-secondary" id="profile-add-btn">+ New Profile</button>' : '<p class="steps">Profile limit reached (5).</p>'}
       </div>
     `);
 
@@ -625,7 +627,9 @@ const App = {
         p.name = name.trim();
         Store.saveProfiles(all);
         if (index === Store.getActiveProfileIndex()) this.updateProfileUI();
-        Account.pushProfiles().catch((e2) => console.warn('Profile sync failed', e2));
+        // Pull-merge-push: a bare push would delete any profiles this device
+        // doesn't know about yet (the RPC removes rows missing from the set).
+        Account.syncProfilesAfterLocalChange().catch((e2) => console.warn('Profile sync failed', e2));
         this.showProfileSheet();
       });
     });
@@ -642,7 +646,7 @@ const App = {
         Store.saveProfiles(remaining);
         Store.clearProfileData(index);
         Account.deleteProfileData(index).catch((e2) => console.warn('Profile delete sync failed', e2));
-        Account.pushProfiles().catch((e2) => console.warn('Profile sync failed', e2));
+        Account.syncProfilesAfterLocalChange(index).catch((e2) => console.warn('Profile sync failed', e2));
         if (Store.getActiveProfileIndex() === index) {
           this.switchProfile(remaining[0].index);
         } else {
@@ -651,14 +655,19 @@ const App = {
       });
     });
 
-    this.el('profile-add-btn').addEventListener('click', () => {
+    const addBtn = this.el('profile-add-btn');
+    if (addBtn) addBtn.addEventListener('click', () => {
+      const newIndex = Store.nextProfileIndex();
+      if (newIndex === null) {
+        this.toast('Profile limit reached (5)');
+        return;
+      }
       const name = prompt('New profile name');
       if (!name || !name.trim()) return;
       const all = Store.getProfiles();
-      const newIndex = Store.nextProfileIndex();
       all.push({ index: newIndex, name: name.trim(), avatarColorHex: Store.nextAvatarColor() });
       Store.saveProfiles(all);
-      Account.pushProfiles().catch((e) => console.warn('Profile sync failed', e));
+      Account.syncProfilesAfterLocalChange().catch((e) => console.warn('Profile sync failed', e));
       this.switchProfile(newIndex);
     });
   },
@@ -716,35 +725,12 @@ const App = {
     this.el('simkl-disconnect-btn').addEventListener('click', () => this.disconnectSimkl());
     this.el('simkl-debug-btn').addEventListener('click', () => this.debugSimklWatching());
 
-    this.el('supabase-save-btn').addEventListener('click', () => {
-      const url = this.el('supabase-url-input').value.trim();
-      const key = this.el('supabase-key-input').value.trim();
-      if (!url || !key) {
-        this.toast('Enter both the Supabase URL and anon key');
-        return;
-      }
-      const settings = Store.getSettings();
-      settings.supabaseUrl = url;
-      settings.supabaseAnonKey = key;
-      Store.saveSettings(settings);
-      Account.reset();
-      this.renderSettingsScreen();
-    });
-
-    this.el('account-reset-config-btn').addEventListener('click', async () => {
-      await Account.signOut();
-      const settings = Store.getSettings();
-      settings.supabaseUrl = '';
-      settings.supabaseAnonKey = '';
-      Store.saveSettings(settings);
-      Account.reset();
-      this.renderSettingsScreen();
-    });
-
     this.el('account-signin-btn').addEventListener('click', async () => {
+      if (this._signingIn) return;
       const email = this.el('account-email-input').value.trim();
       const password = this.el('account-password-input').value;
       if (!email || !password) return;
+      this._signingIn = true;
       try {
         await Account.signIn(email, password);
         this.el('account-password-input').value = '';
@@ -757,6 +743,8 @@ const App = {
         this.renderSettingsScreen();
       } catch (e) {
         this.toast(e.message || 'Sign in failed');
+      } finally {
+        this._signingIn = false;
       }
     });
 
@@ -947,14 +935,9 @@ const App = {
   },
 
   async updateAccountUI() {
-    const settings = Store.getSettings();
-    const configured = Account.isConfigured();
-    this.el('supabase-url-input').value = settings.supabaseUrl || '';
-    this.el('supabase-key-input').value = settings.supabaseAnonKey || '';
-    this.el('account-setup').style.display = configured ? 'none' : 'block';
     this.el('account-signedout').style.display = 'none';
     this.el('account-signedin').style.display = 'none';
-    if (!configured) return;
+    if (!Account.isConfigured()) return;
 
     const session = await Account.getSession();
     if (session) {
