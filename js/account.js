@@ -317,7 +317,7 @@ const Account = {
     const session = await this.getSession();
     if (!session) return;
     const profiles = Store.getProfiles().map((p) => ({
-      profile_index: p.index,
+      profile_index: Store.profileSyncId(p.index),
       name: p.name,
       avatar_color_hex: p.avatarColorHex || '#1E88E5',
     }));
@@ -348,8 +348,10 @@ const Account = {
     const map = new Map();
     for (const p of local) map.set(p.index, p);
     for (const r of remote) {
-      map.set(r.profile_index, {
-        index: r.profile_index,
+      const index = r.profile_index - 1;
+      if (index < 0) continue;
+      map.set(index, {
+        index,
         name: r.name,
         avatarColorHex: r.avatar_color_hex,
       });
