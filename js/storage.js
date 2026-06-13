@@ -55,8 +55,6 @@ const DEFAULT_SETTINGS = {
   player: 'outplayer',
   customTemplate: 'outplayer://x-callback-url/play?url={encodedUrl}&filename={encodedTitle}',
   corsProxy: '',
-  simklClientId: '',
-  simklAccessToken: '',
 };
 
 const DEFAULT_ADDONS = [
@@ -197,13 +195,8 @@ const Store = {
   // copied as text, put in a QR code, or stuck on the end of a URL. No account needed.
   // Covers the active profile's addons plus device-wide settings (player choice,
   // CORS proxy, etc.) — none of which live in the Supabase sync schema.
-  //
-  // The SIMKL access token is deliberately excluded — it's a credential for
-  // your SIMKL account, and shouldn't end up in a copy/pasted blob or share
-  // link. Each device should connect to SIMKL itself via the PIN flow.
   exportConfig() {
     const settings = { ...this.getSettings() };
-    delete settings.simklAccessToken;
     return {
       v: 1,
       addonUrls: this.getAddons().map((a) => a.manifestUrl),
@@ -232,11 +225,7 @@ const Store = {
 
   applySettingsFromConfig(config) {
     if (config && config.settings) {
-      // Preserve this device's own SIMKL connection — imported configs never
-      // carry an access token (see exportConfig), so don't let merging wipe
-      // out an existing one.
-      const current = this.getSettings();
-      this.saveSettings({ ...DEFAULT_SETTINGS, ...config.settings, simklAccessToken: current.simklAccessToken });
+      this.saveSettings({ ...DEFAULT_SETTINGS, ...config.settings });
     }
   },
 };

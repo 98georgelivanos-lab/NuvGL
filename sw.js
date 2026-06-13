@@ -1,4 +1,4 @@
-const CACHE = 'streamfield-v8';
+const CACHE = 'streamfield-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -9,7 +9,6 @@ const ASSETS = [
   './js/api.js',
   './js/addons.js',
   './js/stremio.js',
-  './js/simkl.js',
   './js/account.js',
   './js/player.js',
   './js/app.js',

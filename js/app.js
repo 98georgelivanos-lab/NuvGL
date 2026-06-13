@@ -118,7 +118,6 @@ const App = {
 
   hideSheet() {
     this.el('sheet-backdrop').classList.remove('show');
-    this._simklPollToken = null;
   },
 
   // ---------------- Home / Catalog ----------------
@@ -137,14 +136,12 @@ const App = {
     }
 
     // Continue Watching / Last Watched come from the Streamfield account's
-    // synced history (works locally too); SIMKL rows are the fallback for
-    // SIMKL users with no local/synced history yet.
+    // synced history (works locally too).
     const watchedItems = Store.getWatchedItems();
     const progressEntries = Object.values(Store.getWatchProgress());
     const hasAccountRows = watchedItems.length > 0 || progressEntries.some((p) => p.position > 0 && p.duration > 0);
-    const showSimklRows = Simkl.isConnected() && !hasAccountRows;
 
-    if (!sections.length && !hasAccountRows && !showSimklRows) {
+    if (!sections.length && !hasAccountRows) {
       container.innerHTML = `<div class="empty">No catalogs available. Add an addon in the Addons tab.</div>`;
       return;
     }
@@ -164,9 +161,6 @@ const App = {
     if (hasAccountRows) {
       topRowsHtml = rowSectionHtml('continue', 'Continue Watching', 'Streamfield')
         + rowSectionHtml('lastwatched', 'Last Watched', 'Streamfield');
-    } else if (showSimklRows) {
-      topRowsHtml = rowSectionHtml('continue', 'Continue Watching', 'SIMKL')
-        + rowSectionHtml('lastwatched', 'Last Watched', 'SIMKL');
     }
 
     container.innerHTML = topRowsHtml + sections
@@ -186,9 +180,6 @@ const App = {
     if (hasAccountRows) {
       this.loadHomeRow('continue', () => this.getAccountContinueWatching());
       this.loadHomeRow('lastwatched', () => this.getAccountLastWatched());
-    } else if (showSimklRows) {
-      this.loadHomeRow('continue', () => Simkl.getContinueWatching());
-      this.loadHomeRow('lastwatched', () => Simkl.getLastWatched());
     }
     sections.forEach((s, i) => this.loadCatalogRow(s, i));
   },
@@ -208,7 +199,7 @@ const App = {
         card.addEventListener('click', () => this.openDetail(items[idx]));
       });
     } catch (e) {
-      console.warn(`SIMKL row "${id}" load failed`, e);
+      console.warn(`home row "${id}" load failed`, e);
       section.remove();
     }
   },
@@ -244,8 +235,8 @@ const App = {
   },
 
   // Resume entries from watch progress (real positions come from the TV app
-  // via the account), plus SIMKL-style "next episode" entries derived from
-  // the watched history for shows with no in-progress entry.
+  // via the account), plus "next episode" entries derived from the watched
+  // history for shows with no in-progress entry.
   async getAccountContinueWatching(limit = 10) {
     const inProgress = Object.values(Store.getWatchProgress())
       .filter((p) => p.position > 0 && p.duration > 0 && p.position / p.duration < 0.95)
@@ -433,36 +424,12 @@ const App = {
           }
           this.hideSheet();
           Player.launch(s.url, title);
-          this.trackWatched(trackInfo);
           this.recordWatch(type, id, title, trackInfo);
         });
       });
     } catch (e) {
       this.showSheet(`<h3>${escapeHtml(title)}</h3><div class="empty">Failed to load streams: ${escapeHtml(e.message)}</div>`);
     }
-  },
-
-  // ---------------- SIMKL tracking ----------------
-  trackWatched(trackInfo) {
-    if (!trackInfo || !Simkl.isConnected()) return;
-    let promise;
-    if (trackInfo.kind === 'movie') {
-      promise = Simkl.markMovieWatched(trackInfo.imdbId, trackInfo.title, trackInfo.year);
-    } else if (trackInfo.kind === 'episode') {
-      promise = Simkl.markEpisodeWatched(trackInfo.showImdbId, trackInfo.title, trackInfo.year, trackInfo.season, trackInfo.episode);
-    }
-    if (!promise || typeof promise.then !== 'function') return;
-    promise.then((result) => {
-      if (result.ok) {
-        this.toast('Marked as watched on SIMKL');
-      } else if (result.reason === 'not_found') {
-        this.toast('SIMKL didn\'t recognize this title');
-        console.warn('SIMKL: title not found', trackInfo, result.data);
-      } else {
-        this.toast('SIMKL sync failed');
-        console.warn('SIMKL sync error', trackInfo, result);
-      }
-    });
   },
 
   // ---------------- Watch progress / watched history ----------------
@@ -869,10 +836,6 @@ const App = {
       }
     });
 
-    this.el('simkl-connect-btn').addEventListener('click', () => this.connectSimkl());
-    this.el('simkl-disconnect-btn').addEventListener('click', () => this.disconnectSimkl());
-    this.el('simkl-debug-btn').addEventListener('click', () => this.debugSimklWatching());
-
     this.el('account-signin-btn').addEventListener('click', async () => {
       if (this._signingIn) return;
       const email = this.el('account-email-input').value.trim();
@@ -929,116 +892,6 @@ const App = {
     this.el('account-profiles-btn').addEventListener('click', () => this.showProfileSheet());
   },
 
-  async debugSimklWatching() {
-    this.showSheet(`<h3>SIMKL: Watching</h3><div class="status"><div class="spinner"></div>Loading…</div>`);
-    try {
-      const res = await fetch(`${Simkl.API}/sync/all-items/shows/watching?extended=full&episode_watched_at=yes`, {
-        headers: Simkl.headers(),
-      });
-      if (!res.ok) {
-        this.showSheet(`<h3>SIMKL: Watching</h3><div class="empty">Request failed (HTTP ${res.status}). Try reconnecting SIMKL.</div>`);
-        return;
-      }
-      const data = await res.json();
-      const shows = Array.isArray(data) ? data : data.shows || [];
-      if (!shows.length) {
-        this.showSheet(`
-          <h3>SIMKL: Watching (0)</h3>
-          <div class="empty">
-            SIMKL has no shows with status "watching" yet. Tap a stream for an episode in Streamfield, then check
-            back here — if it still doesn't appear, the title likely wasn't recognized by SIMKL (watch for a
-            "didn't recognize this title" toast).
-          </div>
-        `);
-        return;
-      }
-      const lines = shows.map((item) => {
-        const show = item.show || {};
-        const imdb = (show.ids && show.ids.imdb) || '—';
-        return `${show.title || '?'}\n  imdb: ${imdb} · status: ${item.status} · watched ${item.watched_episodes_count ?? '?'}/${item.total_episodes_count ?? '?'}`;
-      });
-      this.showSheet(`
-        <h3>SIMKL: Watching (${shows.length})</h3>
-        <pre style="white-space:pre-wrap;font-size:12px;line-height:1.7;margin:0">${escapeHtml(lines.join('\n\n'))}</pre>
-      `);
-    } catch (e) {
-      this.showSheet(`<h3>SIMKL: Watching</h3><div class="empty">Error: ${escapeHtml(e.message)}</div>`);
-    }
-  },
-
-  // ---------------- SIMKL connect ----------------
-  async connectSimkl() {
-    const clientId = this.el('simkl-client-id-input').value.trim();
-    if (!clientId) {
-      this.toast('Enter your SIMKL Client ID first');
-      return;
-    }
-    const settings = Store.getSettings();
-    settings.simklClientId = clientId;
-    Store.saveSettings(settings);
-
-    try {
-      const pin = await Simkl.requestPin(clientId);
-      const verifyUrl = pin.verification_url || pin.verification_uri || 'https://simkl.com/pin';
-      this.showSheet(`
-        <h3>Connect SIMKL</h3>
-        <p class="steps">
-          On any device, go to <a href="${escapeAttr(verifyUrl)}" target="_blank" rel="noopener">${escapeHtml(verifyUrl)}</a>
-          and enter this code:
-        </p>
-        <div class="simkl-pin-code">${escapeHtml(pin.user_code)}</div>
-        <div class="status" id="simkl-pin-status"><div class="spinner"></div>Waiting for authorization…</div>
-      `);
-      this.pollSimklPin(clientId, pin);
-    } catch (e) {
-      this.toast('Could not start SIMKL connection — check your Client ID');
-    }
-  },
-
-  pollSimklPin(clientId, pin) {
-    const token = {};
-    this._simklPollToken = token;
-    const interval = (pin.interval || 5) * 1000;
-    const deadline = Date.now() + (pin.expires_in || 900) * 1000;
-
-    const tick = async () => {
-      if (this._simklPollToken !== token) return; // cancelled (sheet closed)
-      if (Date.now() > deadline) {
-        this.hideSheet();
-        this.toast('SIMKL connection timed out — try again');
-        return;
-      }
-      try {
-        const res = await Simkl.pollPin(clientId, pin.user_code);
-        if (this._simklPollToken !== token) return;
-        if (res.result === 'OK' && res.access_token) {
-          const settings = Store.getSettings();
-          settings.simklAccessToken = res.access_token;
-          Store.saveSettings(settings);
-          this._simklPollToken = null;
-          this.hideSheet();
-          this.toast('Connected to SIMKL');
-          this.renderSettingsScreen();
-          this.renderHome();
-          return;
-        }
-      } catch (e) {
-        // transient — keep polling
-      }
-      if (this._simklPollToken === token) setTimeout(tick, interval);
-    };
-    setTimeout(tick, interval);
-  },
-
-  disconnectSimkl() {
-    const settings = Store.getSettings();
-    settings.simklAccessToken = '';
-    Store.saveSettings(settings);
-    this.toast('Disconnected from SIMKL');
-    this.renderSettingsScreen();
-    this.renderHome();
-  },
-
   copyToClipboard(text, successMessage) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard
@@ -1072,12 +925,7 @@ const App = {
     this.el('custom-template-input').value = settings.customTemplate;
     this.el('cors-proxy-input').value = settings.corsProxy;
     this.el('custom-template-wrap').style.display = settings.player === 'custom' ? 'block' : 'none';
-    this.el('simkl-client-id-input').value = settings.simklClientId;
     this.updateProfileUI();
-
-    const connected = Simkl.isConnected();
-    this.el('simkl-connected').style.display = connected ? 'block' : 'none';
-    this.el('simkl-disconnected').style.display = connected ? 'none' : 'block';
 
     this.updateAccountUI();
   },
