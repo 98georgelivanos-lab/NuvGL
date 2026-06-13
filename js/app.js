@@ -494,16 +494,22 @@ const App = {
     this.renderHome();
     Account.pushWatchedItems([watchedEntry]).catch((e) => console.warn('Watched history sync failed', e));
 
-    const progressKey = `${contentType}:${contentId}:${id}`;
+    // Key format matches the Streamfield TV app's progressKey() so this entry
+    // lands on the same Continue Watching row instead of a duplicate one.
+    const progressKey = (season != null && episode != null) ? `${contentId}_s${season}e${episode}` : contentId;
     const progress = Store.getWatchProgress();
+    const existing = progress[progressKey];
     progress[progressKey] = {
       content_id: contentId,
       content_type: contentType,
       video_id: id,
       season,
       episode,
-      position: 0,
-      duration: 0,
+      // Preserve any position/duration already known for this entry (e.g.
+      // synced down from a device that tracks real playback progress) —
+      // we only know "this was opened just now", not a position.
+      position: existing?.position || 0,
+      duration: existing?.duration || 0,
       last_watched: now,
       progress_key: progressKey,
     };
