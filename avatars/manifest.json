@@ -25,6 +25,11 @@
   "file": "ariel.jpg"
  },
  {
+  "id": "beam",
+  "name": "Beam",
+  "file": "beam.png"
+ },
+ {
   "id": "bellatrix-lestrange",
   "name": "Bellatrix Lestrange",
   "file": "bellatrix-lestrange.jpg"
@@ -38,6 +43,11 @@
   "id": "boba-fett",
   "name": "Boba Fett",
   "file": "boba-fett.jpg"
+ },
+ {
+  "id": "buffer",
+  "name": "Buffer",
+  "file": "buffer.png"
  },
  {
   "id": "capt-john-h-miller",
@@ -153,6 +163,11 @@
   "id": "glenn-rhee",
   "name": "Glenn Rhee",
   "file": "glenn-rhee.jpg"
+ },
+ {
+  "id": "glitch",
+  "name": "Glitch",
+  "file": "glitch.png"
  },
  {
   "id": "grand-maester-pycelle",
@@ -280,6 +295,11 @@
   "file": "lucius-malfoy.jpg"
  },
  {
+  "id": "marathon",
+  "name": "Marathon",
+  "file": "marathon.png"
+ },
+ {
   "id": "margaery-tyrell",
   "name": "Margaery Tyrell",
   "file": "margaery-tyrell.jpg"
@@ -320,6 +340,11 @@
   "file": "neo.jpg"
  },
  {
+  "id": "nova",
+  "name": "Nova",
+  "file": "nova.png"
+ },
+ {
   "id": "obi-wan-kenobi",
   "name": "Obi-Wan Kenobi",
   "file": "obi-wan-kenobi.jpg"
@@ -340,6 +365,16 @@
   "file": "paul-edgecombe.jpg"
  },
  {
+  "id": "pixel",
+  "name": "Pixel",
+  "file": "pixel.png"
+ },
+ {
+  "id": "pop",
+  "name": "Pop",
+  "file": "pop.png"
+ },
+ {
   "id": "professor-slughorn",
   "name": "Professor Slughorn",
   "file": "professor-slughorn.jpg"
@@ -358,6 +393,16 @@
   "id": "rachel-green",
   "name": "Rachel Green",
   "file": "rachel-green.jpg"
+ },
+ {
+  "id": "reely",
+  "name": "Reely",
+  "file": "reely.png"
+ },
+ {
+  "id": "remy",
+  "name": "Remy",
+  "file": "remy.png"
  },
  {
   "id": "rocky-balboa",
@@ -413,6 +458,11 @@
   "id": "spider-man",
   "name": "Spider-Man",
   "file": "spider-man.jpg"
+ },
+ {
+  "id": "static-tv",
+  "name": "Static",
+  "file": "static-tv.png"
  },
  {
   "id": "the-bride",
