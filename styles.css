@@ -161,7 +161,7 @@ body {
 }
 
 /* ---------- Profile button / avatars ---------- */
-.profile-icon-btn { padding: 0; overflow: hidden; }
+.profile-icon-btn { padding: 0; overflow: hidden; border-radius: 50%; }
 
 .profile-avatar {
   display: inline-flex;
